@@ -20,6 +20,14 @@ namespace System.IO.Pipelines
 
         private static readonly int _vectorSpan = Vector<byte>.Count;
 
+#if DEBUG
+        // Need unit tests to test Vector path
+        private static readonly bool VectorIsHardwareAccelerated = true;
+#else
+        // Check will be Jitted away https://github.com/dotnet/coreclr/issues/1079
+        private static readonly bool VectorIsHardwareAccelerated = Vector.IsHardwareAccelerated;
+#endif
+
         public static unsafe int Seek(ReadCursor begin, ReadCursor end, out ReadCursor result, byte byte0)
         {
             result = end;
@@ -48,54 +56,47 @@ namespace System.IO.Pipelines
                     wasLastBlock = block.Next == null;
                     following = block.End - index;
                 }
-                ArraySegment<byte> array;
-                var getArrayResult = block.Memory.TryGetArray(out array);
-                Debug.Assert(getArrayResult);
 
-                while (following > 0)
+                fixed (byte* pointer = &block.Memory.Span.DangerousGetPinnableReference())
                 {
-                    // Need unit tests to test Vector path
-#if !DEBUG
-                    // Check will be Jitted away https://github.com/dotnet/coreclr/issues/1079
-                    if (Vector.IsHardwareAccelerated)
+                    while (following > 0)
                     {
-#endif
-                    if (following >= _vectorSpan)
-                    {
-                        var byte0Equals = Vector.Equals(new Vector<byte>(array.Array, array.Offset + index), GetVector(byte0));
-
-                        if (byte0Equals.Equals(Vector<byte>.Zero))
+                        if (VectorIsHardwareAccelerated)
                         {
-                            if (block == end.Segment && index + _vectorSpan > end.Index)
+                            if (following >= _vectorSpan)
                             {
-                                return -1;
+                                var data = Unsafe.Read<Vector<byte>>(pointer + index);
+                                var byte0Equals = Vector.Equals(data, GetVector(byte0));
+
+                                if (byte0Equals.Equals(Vector<byte>.Zero))
+                                {
+                                    if (block == end.Segment && index + _vectorSpan > end.Index)
+                                    {
+                                        return -1;
+                                    }
+
+                                    following -= _vectorSpan;
+                                    index += _vectorSpan;
+                                    continue;
+                                }
+
+                                var byteIndex = LocateFirstFoundByte(byte0Equals);
+
+                                if (block == end.Segment && index + byteIndex >= end.Index)
+                                {
+                                    // Ensure iterator is left at limit position
+                                    return -1;
+                                }
+
+                                result = new ReadCursor(block, index + byteIndex);
+                                return byte0;
                             }
-
-                            following -= _vectorSpan;
-                            index += _vectorSpan;
-                            continue;
+                            // Need unit tests to test Vector path
                         }
 
-                        var byteIndex = LocateFirstFoundByte(byte0Equals);
+                        var pCurrent = pointer + index;
+                        var pEnd = block == end.Segment ? pointer + end.Index : pCurrent + following;
 
-                        if (block == end.Segment && index + byteIndex >= end.Index)
-                        {
-                            // Ensure iterator is left at limit position
-                            return -1;
-                        }
-
-                        result = new ReadCursor(block, index + byteIndex);
-                        return byte0;
-                    }
-                    // Need unit tests to test Vector path
-#if !DEBUG
-                    }
-#endif
-                    fixed (byte* pCurrentFixed = array.Array)
-                    {
-                        var pCurrent = pCurrentFixed + array.Offset + index;
-
-                        var pEnd = block == end.Segment ? pCurrentFixed + array.Offset + end.Index : pCurrent + following;
                         while (pCurrent < pEnd)
                         {
                             if (*pCurrent == byte0)
@@ -106,9 +107,10 @@ namespace System.IO.Pipelines
                             pCurrent++;
                             index++;
                         }
+
+                        following = 0;
+                        break;
                     }
-                    following = 0;
-                    break;
                 }
             }
         }
@@ -141,62 +143,52 @@ namespace System.IO.Pipelines
                     wasLastBlock = block.Next == null;
                     following = block.End - index;
                 }
-                ArraySegment<byte> array;
-                var getArrayResult = block.Memory.TryGetArray(out array);
-                Debug.Assert(getArrayResult);
 
-                while (following > 0)
+                fixed (byte* pointer = &block.Memory.Span.DangerousGetPinnableReference())
                 {
-
-                    // Need unit tests to test Vector path
-#if !DEBUG
-                    // Check will be Jitted away https://github.com/dotnet/coreclr/issues/1079
-                    if (Vector.IsHardwareAccelerated)
+                    while (following > 0)
                     {
-#endif
-                    if (following >= _vectorSpan)
-                    {
-                        var data = new Vector<byte>(array.Array, index + array.Offset);
-
-                        var byteEquals = Vector.Equals(data, GetVector(byte0));
-                        byteEquals = Vector.ConditionalSelect(byteEquals, byteEquals, Vector.Equals(data, GetVector(byte1)));
-
-                        if (!byteEquals.Equals(Vector<byte>.Zero))
+                        if (VectorIsHardwareAccelerated)
                         {
-                            byteIndex = LocateFirstFoundByte(byteEquals);
-                        }
-
-                        if (byteIndex == int.MaxValue)
-                        {
-                            following -= _vectorSpan;
-                            index += _vectorSpan;
-
-                            if (block == end.Segment && index >= end.Index)
+                            if (following >= _vectorSpan)
                             {
-                                return -1;
+                                var data = Unsafe.Read<Vector<byte>>(pointer + index);
+
+                                var byteEquals = Vector.Equals(data, GetVector(byte0));
+                                byteEquals = Vector.ConditionalSelect(byteEquals, byteEquals, Vector.Equals(data, GetVector(byte1)));
+
+                                if (!byteEquals.Equals(Vector<byte>.Zero))
+                                {
+                                    byteIndex = LocateFirstFoundByte(byteEquals);
+                                }
+
+                                if (byteIndex == int.MaxValue)
+                                {
+                                    following -= _vectorSpan;
+                                    index += _vectorSpan;
+
+                                    if (block == end.Segment && index >= end.Index)
+                                    {
+                                        return -1;
+                                    }
+
+                                    continue;
+                                }
+
+                                if (block == end.Segment && index + byteIndex >= end.Index)
+                                {
+                                    // Ensure iterator is left at limit position
+                                    return -1;
+                                }
+
+                                result = new ReadCursor(block, index + byteIndex);
+                                return pointer[index + byteIndex];
                             }
-
-                            continue;
                         }
 
-                        if (block == end.Segment && index + byteIndex >= end.Index)
-                        {
-                            // Ensure iterator is left at limit position
-                            return -1;
-                        }
+                        var pCurrent = pointer + index;
+                        var pEnd = block == end.Segment ? pointer + end.Index : pCurrent + following;
 
-                        result = new ReadCursor(block, index + byteIndex);
-                        return array.Array[array.Offset + index + byteIndex];
-                    }
-                    // Need unit tests to test Vector path
-#if !DEBUG
-                    }
-#endif
-                    fixed (byte* pCurrentFixed = array.Array)
-                    {
-                        var pCurrent = pCurrentFixed + array.Offset + index;
-
-                        var pEnd = block == end.Segment ? pCurrentFixed + array.Offset + end.Index : pCurrent + following;
                         while (pCurrent < pEnd)
                         {
                             if (*pCurrent == byte0)
@@ -248,63 +240,52 @@ namespace System.IO.Pipelines
                     wasLastBlock = block.Next == null;
                     following = block.End - index;
                 }
-                ArraySegment<byte> array;
-                var getArrayResult = block.Memory.TryGetArray(out array);
-                Debug.Assert(getArrayResult);
 
-                while (following > 0)
+                fixed (byte* pointer = &block.Memory.Span.DangerousGetPinnableReference())
                 {
-                    // Need unit tests to test Vector path
-#if !DEBUG
-                    // Check will be Jitted away https://github.com/dotnet/coreclr/issues/1079
-                    if (Vector.IsHardwareAccelerated)
+                    while (following > 0)
                     {
-#endif
-                    if (following >= _vectorSpan)
-                    {
-                        var data = new Vector<byte>(array.Array, array.Offset + index);
-
-                        var byteEquals = Vector.Equals(data, GetVector(byte0));
-                        byteEquals = Vector.ConditionalSelect(byteEquals, byteEquals, Vector.Equals(data, GetVector(byte1)));
-                        byteEquals = Vector.ConditionalSelect(byteEquals, byteEquals, Vector.Equals(data, GetVector(byte2)));
-
-                        if (!byteEquals.Equals(Vector<byte>.Zero))
+                        if (VectorIsHardwareAccelerated)
                         {
-                            byteIndex = LocateFirstFoundByte(byteEquals);
-                        }
-
-                        if (byteIndex == int.MaxValue)
-                        {
-                            following -= _vectorSpan;
-                            index += _vectorSpan;
-
-                            if (block == end.Segment && index >= end.Index)
+                            if (following >= _vectorSpan)
                             {
-                                return -1;
+                                var data = Unsafe.Read<Vector<byte>>(pointer + index);
+
+                                var byteEquals = Vector.Equals(data, GetVector(byte0));
+                                byteEquals = Vector.ConditionalSelect(byteEquals, byteEquals, Vector.Equals(data, GetVector(byte1)));
+                                byteEquals = Vector.ConditionalSelect(byteEquals, byteEquals, Vector.Equals(data, GetVector(byte2)));
+
+                                if (!byteEquals.Equals(Vector<byte>.Zero))
+                                {
+                                    byteIndex = LocateFirstFoundByte(byteEquals);
+                                }
+
+                                if (byteIndex == int.MaxValue)
+                                {
+                                    following -= _vectorSpan;
+                                    index += _vectorSpan;
+
+                                    if (block == end.Segment && index >= end.Index)
+                                    {
+                                        return -1;
+                                    }
+
+                                    continue;
+                                }
+
+                                if (block == end.Segment && index + byteIndex >= end.Index)
+                                {
+                                    // Ensure iterator is left at limit position
+                                    return -1;
+                                }
+
+                                result = new ReadCursor(block, index + byteIndex);
+                                return pointer[index + byteIndex];
                             }
-
-                            continue;
                         }
 
-                        if (block == end.Segment && index + byteIndex >= end.Index)
-                        {
-                            // Ensure iterator is left at limit position
-                            return -1;
-                        }
-
-                        result = new ReadCursor(block, index + byteIndex);
-                        return array.Array[array.Offset + index + byteIndex];
-                    }
-                    // Need unit tests to test Vector path
-#if !DEBUG
-                    }
-#endif
-
-                    fixed (byte* pCurrentFixed = array.Array)
-                    {
-                        var pCurrent = pCurrentFixed + array.Offset + index;
-
-                        var pEnd = block == end.Segment ? pCurrentFixed + array.Offset + end.Index : pCurrent + following;
+                        var pCurrent = pointer + index;
+                        var pEnd = block == end.Segment ? pointer + end.Index : pCurrent + following;
                         while (pCurrent < pEnd)
                         {
                             if (*pCurrent == byte0)
