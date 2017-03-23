@@ -16,8 +16,8 @@ namespace System.IO.Pipelines.Samples
     {
         public static void Main(string[] args)
         {
-            // AspNetHttpServerSample.Run();
-            RawLibuvHttpServerSample.Run();
+            AspNetHttpServerSample.Run();
+            // RawLibuvHttpServerSample.Run();
             // ProtocolHandling.Run();
         }
     }

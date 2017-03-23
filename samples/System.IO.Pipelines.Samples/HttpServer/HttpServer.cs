@@ -38,8 +38,8 @@ namespace System.IO.Pipelines.Samples.Http
             IPAddress ip;
             int port;
             GetIp(address, out ip, out port);
-            Task.Run(() => StartAcceptingLibuvConnections(application, ip, port));
-            //Task.Factory.StartNew(() => StartAcceptingRIOConnections(application, ip, port), TaskCreationOptions.LongRunning);
+            //Task.Run(() => StartAcceptingLibuvConnections(application, ip, port));
+            Task.Factory.StartNew(() => StartAcceptingRIOConnections(application, ip, port), TaskCreationOptions.LongRunning);
             // Task.Factory.StartNew(() => StartAcceptingConnections(application, ip, port), TaskCreationOptions.LongRunning);
         }
 

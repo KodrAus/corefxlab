@@ -139,7 +139,7 @@ namespace System.IO.Pipelines
         /// </summary>
         private MemoryPoolBlock AllocateSlab()
         {
-            var slab = MemoryPoolSlab.Create(_slabLength);
+            var slab = CreateSlab(_slabLength);
             _slabs.Push(slab);
 
             _slabAllocationCallback?.Invoke(slab);
@@ -155,10 +155,9 @@ namespace System.IO.Pipelines
                 offset + _blockLength < poolAllocationLength;
                 offset += _blockStride)
             {
-                var block = MemoryPoolBlock.Create(
+                var block = CreateBlock(
                     offset,
                     _blockLength,
-                    this,
                     slab);
 #if BLOCK_LEASE_TRACKING
                 block.IsLeased = true;
@@ -167,10 +166,9 @@ namespace System.IO.Pipelines
             }
 
             // return last block rather than adding to pool
-            var newBlock = MemoryPoolBlock.Create(
+            var newBlock = CreateBlock(
                     offset,
                     _blockLength,
-                    this,
                     slab);
 
             return newBlock;
