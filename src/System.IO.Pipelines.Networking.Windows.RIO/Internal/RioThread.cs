@@ -171,7 +171,7 @@ namespace System.IO.Pipelines.Networking.Windows.RIO.Internal
             thread._connections = new Dictionary<long, RioTcpConnection>();
             thread._bufferIdMappings = new List<BufferMapping>();
 
-            var memoryPool = new MemoryPool();
+            var memoryPool = new RioMemoryPool(thread._rio);
             memoryPool.RegisterSlabAllocationCallback((slab) => thread.OnSlabAllocated(slab));
             memoryPool.RegisterSlabDeallocationCallback((slab) => thread.OnSlabDeallocated(slab));
             thread._factory = new PipeFactory(memoryPool);
@@ -197,7 +197,7 @@ namespace System.IO.Pipelines.Networking.Windows.RIO.Internal
             thread._connections = new Dictionary<long, RioTcpConnection>();
             thread._bufferIdMappings = new List<BufferMapping>();
 
-            var memoryPool = new MemoryPool();
+            var memoryPool = new RioMemoryPool(thread._rio);
             memoryPool.RegisterSlabAllocationCallback((slab) => thread.OnSlabAllocated(slab));
             memoryPool.RegisterSlabDeallocationCallback((slab) => thread.OnSlabDeallocated(slab));
             thread._factory = new PipeFactory(memoryPool);

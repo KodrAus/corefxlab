@@ -90,6 +90,16 @@ namespace System.IO.Pipelines
             _slabDeallocationCallback = callback;
         }
 
+        protected internal virtual MemoryPoolBlock CreateBlock(int offset, int length, MemoryPoolSlab slab)
+        {
+            return MemoryPoolBlock.Create(offset, length, this, slab);
+        }
+
+        protected virtual MemoryPoolSlab CreateSlab(int length)
+        {
+            return MemoryPoolSlab.Create(length);
+        }
+
         /// <summary>
         /// Called to take a block from the pool.
         /// </summary>

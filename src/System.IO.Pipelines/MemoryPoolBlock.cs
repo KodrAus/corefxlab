@@ -50,7 +50,7 @@ namespace System.IO.Pipelines
             if (Slab != null && Slab.IsActive)
             {
                 // Need to make a new object because this one is being finalized
-                Pool.Return(new MemoryPoolBlock(Pool, Slab, _offset, _length));
+                Pool.Return(Pool.CreateBlock(_offset, _length, Slab));
             }
         }
 
