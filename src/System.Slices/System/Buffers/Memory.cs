@@ -49,6 +49,8 @@ namespace System
 
         public bool IsEmpty => Length == 0;
 
+        public IMemoryMetadata Metadata => _owner.Metadata;
+
         public Memory<T> Slice(int index)
         {
             return new Memory<T>(_owner, _index + index, _length - index);

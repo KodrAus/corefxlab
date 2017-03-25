@@ -29,7 +29,6 @@ namespace System.IO.Pipelines.Networking.Windows.RIO.Internal
 
         private PipeFactory _factory;
         private Dictionary<long, RioTcpConnection> _connections;
-        private List<BufferMapping> _bufferIdMappings;
 
         public IntPtr ReceiveCompletionQueue => _completionQueue;
 
@@ -91,66 +90,7 @@ namespace System.IO.Pipelines.Networking.Windows.RIO.Internal
                 _connections.Remove(key);
             }
         }
-
-        public IntPtr GetBufferId(IntPtr address, out long startAddress)
-        {
-            var id = IntPtr.Zero;
-            startAddress = 0;
-
-            lock (_bufferIdMappings)
-            {
-                var addressLong = address.ToInt64();
-
-                // Can binary search if it's too slow
-                foreach (var mapping in _bufferIdMappings)
-                {
-                    if (addressLong >= mapping.Start && addressLong <= mapping.End)
-                    {
-                        id = mapping.Id;
-                        startAddress = mapping.Start;
-                        break;
-                    }
-                }
-            }
-
-            return id;
-        }
-
-        private void OnSlabAllocated(MemoryPoolSlab slab)
-        {
-            lock (_bufferIdMappings)
-            {
-                var memoryPtr = slab.NativePointer;
-                var bufferId = _rio.RioRegisterBuffer(memoryPtr, (uint)slab.Length);
-                var addressLong = memoryPtr.ToInt64();
-
-                _bufferIdMappings.Add(new BufferMapping
-                {
-                    Id = bufferId,
-                    Start = addressLong,
-                    End = addressLong + slab.Length
-                });
-            }
-        }
-
-        private void OnSlabDeallocated(MemoryPoolSlab slab)
-        {
-            var memoryPtr = slab.NativePointer;
-            var addressLong = memoryPtr.ToInt64();
-
-            lock (_bufferIdMappings)
-            {
-                for (int i = _bufferIdMappings.Count - 1; i >= 0; i--)
-                {
-                    if (addressLong == _bufferIdMappings[i].Start)
-                    {
-                        _bufferIdMappings.RemoveAt(i);
-                        break;
-                    }
-                }
-            }
-        }
-
+        
         public void Start()
         {
             _completionThread.Start(this);
@@ -169,11 +109,8 @@ namespace System.IO.Pipelines.Networking.Windows.RIO.Internal
             nativeThread.ProcessorAffinity = new IntPtr((long)affinity);
 
             thread._connections = new Dictionary<long, RioTcpConnection>();
-            thread._bufferIdMappings = new List<BufferMapping>();
 
             var memoryPool = new RioMemoryPool(thread._rio);
-            memoryPool.RegisterSlabAllocationCallback((slab) => thread.OnSlabAllocated(slab));
-            memoryPool.RegisterSlabDeallocationCallback((slab) => thread.OnSlabDeallocated(slab));
             thread._factory = new PipeFactory(memoryPool);
 
             thread.ProcessLogicalCompletions();
@@ -195,11 +132,8 @@ namespace System.IO.Pipelines.Networking.Windows.RIO.Internal
             nativeThread.ProcessorAffinity = new IntPtr((long)affinity);
 
             thread._connections = new Dictionary<long, RioTcpConnection>();
-            thread._bufferIdMappings = new List<BufferMapping>();
 
             var memoryPool = new RioMemoryPool(thread._rio);
-            memoryPool.RegisterSlabAllocationCallback((slab) => thread.OnSlabAllocated(slab));
-            memoryPool.RegisterSlabDeallocationCallback((slab) => thread.OnSlabDeallocated(slab));
             thread._factory = new PipeFactory(memoryPool);
 
             thread.ProcessPhysicalCompletions();

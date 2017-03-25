@@ -31,6 +31,8 @@ namespace System.Buffers
         protected IntPtr Pointer => _pointer;
         protected int Offset => _arrayIndex;
 
+        public virtual IMemoryMetadata Metadata => null;
+
         public bool HasOutstandingReferences { 
             get { 
                 return _referenceCount != 0 

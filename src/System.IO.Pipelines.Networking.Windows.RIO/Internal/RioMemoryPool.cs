@@ -1,4 +1,5 @@
-﻿using System.IO.Pipelines.Networking.Windows.RIO.Internal.Winsock;
+﻿using System.Buffers;
+using System.IO.Pipelines.Networking.Windows.RIO.Internal.Winsock;
 
 namespace System.IO.Pipelines.Networking.Windows.RIO.Internal
 {
@@ -43,11 +44,26 @@ namespace System.IO.Pipelines.Networking.Windows.RIO.Internal
 
         public void Register(RegisteredIO rio)
         {
-            _bufferId = IntPtr.Zero;
+            _bufferId = rio.RioRegisterBuffer(NativePointer, (uint)Length);
         }
 
         private IntPtr _bufferId;
         public IntPtr BufferId => _bufferId;
+    }
+
+    internal class RioMemoryMetadata : IMemoryMetadata
+    {
+        public RioMemoryMetadata(IntPtr bufferId, long bufferStartAddress)
+        {
+            _bufferId = bufferId;
+            _bufferStartAddress = bufferStartAddress;
+        }
+
+        private IntPtr _bufferId;
+        public IntPtr BufferId => _bufferId;
+
+        private long _bufferStartAddress;
+        public long BufferStartAddress => _bufferStartAddress;
     }
 
     internal class RioMemoryPoolBlock : MemoryPoolBlock
@@ -64,6 +80,7 @@ namespace System.IO.Pipelines.Networking.Windows.RIO.Internal
         {
             return new RioMemoryPoolBlock(pool, slab, offset, length)
             {
+                _metadata = new RioMemoryMetadata(slab.BufferId, slab.NativePointer.ToInt64())
 #if BLOCK_LEASE_TRACKING
                 Leaser = Environment.StackTrace,
 #endif
@@ -72,6 +89,7 @@ namespace System.IO.Pipelines.Networking.Windows.RIO.Internal
 
         public new RioMemoryPoolSlab Slab { get; }
 
-        public IntPtr BufferId => Slab.BufferId;
+        private RioMemoryMetadata _metadata;
+        public override IMemoryMetadata Metadata => _metadata;
     }
 }

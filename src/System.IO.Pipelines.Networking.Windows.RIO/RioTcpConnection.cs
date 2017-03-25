@@ -221,15 +221,16 @@ namespace System.IO.Pipelines.Networking.Windows.RIO
 
         private unsafe RioBufferSegment GetSegmentFromMemory(Memory<byte> memory)
         {
-            void* pointer;
-            if (!memory.TryGetPointer(out pointer))
-            {
-                throw new InvalidOperationException("Memory needs to be pinned");
-            }
-            var spanPtr = (IntPtr)pointer;
-            long startAddress;
+            var metadata = memory.Metadata as RioMemoryMetadata;
+
+            long startAddress = metadata.BufferStartAddress;
+            IntPtr bufferId = metadata.BufferId;
+
+            // NOTE: It's ok to get a temporary pin handle.
+            // Because we have RioMemoryMetadata, we know it's already pinned long-term by a RioMemoryPool
+            var pin = memory.Pin();
+            var spanPtr = (IntPtr)pin.PinnedPointer;
             long spanAddress = spanPtr.ToInt64();
-            var bufferId = _rioThread.GetBufferId(spanPtr, out startAddress);
 
             checked
             {
