@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.Binary;
 using System.Buffers;
 using System.Buffers.Pools;
 using System.Collections.Generic;
@@ -11,7 +12,7 @@ namespace System.Text.Json
     public struct JsonObject : IDisposable
     {
         private BufferPool _pool;
-        private OwnedMemory<byte> _dbMemory;
+        private OwnedBuffer<byte> _dbMemory;
         private ReadOnlySpan<byte> _db; 
         private ReadOnlySpan<byte> _values;
 
@@ -29,7 +30,7 @@ namespace System.Text.Json
             return result;
         }
 
-        internal JsonObject(ReadOnlySpan<byte> values, ReadOnlySpan<byte> db, BufferPool pool = null, OwnedMemory<byte> dbMemory = null)
+        internal JsonObject(ReadOnlySpan<byte> values, ReadOnlySpan<byte> db, BufferPool pool = null, OwnedBuffer<byte> dbMemory = null)
         {
             _db = db;
             _values = values;

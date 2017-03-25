@@ -2,7 +2,6 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Buffers;
-using System.Buffers.Pools;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
@@ -68,7 +67,7 @@ namespace System.IO.Pipelines
 
         private Action<MemoryPoolSlab> _slabDeallocationCallback;
 
-        public override OwnedMemory<byte> Rent(int size)
+        public override OwnedBuffer<byte> Rent(int size)
         {
             if (size > _blockLength)
             {

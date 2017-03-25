@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using System.Binary;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace System.IO.Pipelines
@@ -235,13 +236,13 @@ namespace System.IO.Pipelines
 
             if (buffer.IsSingleSpan)
             {
-                return buffer.First.Span.BlockEquals(value);
+                return buffer.First.Span.SequenceEqual(value);
             }
 
             foreach (var memory in buffer)
             {
                 var compare = value.Slice(0, memory.Length);
-                if (!memory.Span.BlockEquals(compare))
+                if (!memory.Span.SequenceEqual(compare))
                 {
                     return false;
                 }

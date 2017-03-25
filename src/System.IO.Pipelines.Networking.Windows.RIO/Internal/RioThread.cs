@@ -456,17 +456,5 @@ namespace System.IO.Pipelines.Networking.Windows.RIO.Internal
                 return (ulong)-1;
             }
         }
-
-        private struct BufferMapping
-        {
-            public IntPtr Id;
-            public long Start;
-            public long End;
-
-            public override string ToString()
-            {
-                return $"{Id} ({Start}) - ({End})";
-            }
-        }
     }
 }

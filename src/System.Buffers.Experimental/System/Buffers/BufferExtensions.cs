@@ -3,28 +3,28 @@
 
 using System.Collections.Sequences;
 using System.Diagnostics;
-using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Numerics;
 
 namespace System.Buffers
 {
     public static class BufferExtensions
     {
-        public static ReadOnlySpan<byte> ToSpan<T>(this T memorySequence) where T : ISequence<ReadOnlyMemory<byte>>
+        public static ReadOnlySpan<byte> ToSpan<T>(this T bufferSequence) where T : ISequence<ReadOnlyBuffer<byte>>
         {
             Position position = Position.First;
-            ReadOnlyMemory<byte> memory;
-            ResizableArray<byte> array = new ResizableArray<byte>(memorySequence.Length.GetValueOrDefault(1024)); 
-            while (memorySequence.TryGet(ref position, out memory))
+            ReadOnlyBuffer<byte> buffer;
+            ResizableArray<byte> array = new ResizableArray<byte>(1024); 
+            while (bufferSequence.TryGet(ref position, out buffer))
             {
-                array.AddAll(memory.Span);
+                array.AddAll(buffer.Span);
             }
             array.Resize(array.Count);
             return array.Items.Slice(0, array.Count);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int IndexOf(this IReadOnlyMemoryList<byte> sequence, ReadOnlySpan<byte> value)
+        public static int IndexOf(this IReadOnlyBufferList<byte> sequence, ReadOnlySpan<byte> value)
         {
             var first = sequence.First.Span;
             var index = first.IndexOf(value);
@@ -36,7 +36,7 @@ namespace System.Buffers
             return IndexOfStraddling(first, sequence.Rest, value);
         }
 
-        public static int IndexOf(this IReadOnlyMemoryList<byte> sequence, byte value)
+        public static int IndexOf(this IReadOnlyBufferList<byte> sequence, byte value)
         {
             var first = sequence.First.Span;
             var index = first.IndexOf(value);
@@ -54,7 +54,7 @@ namespace System.Buffers
         // TODO (pri 3): I am pretty sure this whole routine can be written much better
 
         // searches values that potentially straddle between first and rest
-        internal static int IndexOfStraddling(this ReadOnlySpan<byte> first, IReadOnlyMemoryList<byte> rest, ReadOnlySpan<byte> value)
+        internal static int IndexOfStraddling(this ReadOnlySpan<byte> first, IReadOnlyBufferList<byte> rest, ReadOnlySpan<byte> value)
         {
             Debug.Assert(rest != null);
 
@@ -119,270 +119,93 @@ namespace System.Buffers
             return -1;
         }
 
-        public unsafe static int IndexOfVectorized(this Span<byte> buffer, byte value)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int IndexOf(this ReadOnlyBuffer<byte> buffer, ReadOnlySpan<byte> values)
         {
-            fixed (byte* pSearchSpace = &buffer.DangerousGetPinnableReference())
-            {
-                return IndexOfVectorized(pSearchSpace, buffer.Length, value);
-            }
+            return SpanExtensions.IndexOf(buffer.Span, values);
         }
 
-        public unsafe static int IndexOfVectorized(this Span<byte> buffer, byte value0, byte value1)
+        public static int SequentialIndexOf(this Span<byte> span, byte value)
         {
-            fixed (byte* pSearchSpace = &buffer.DangerousGetPinnableReference())
-            {
-                return IndexOfVectorized(pSearchSpace, buffer.Length, value0, value1);
-            }
+            return SequentialIndexOf(ref span.DangerousGetPinnableReference(), value, span.Length);
         }
 
-        public unsafe static int IndexOfVectorized(this Span<byte> buffer, byte value0, byte value1, byte value2)
+        public static int SequentialIndexOf(this ReadOnlySpan<byte> span, byte value)
         {
-            fixed (byte* pSearchSpace = &buffer.DangerousGetPinnableReference())
-            {
-                return IndexOfVectorized(pSearchSpace, buffer.Length, value0, value1, value2);
-            }
+            return SequentialIndexOf(ref span.DangerousGetPinnableReference(), value, span.Length);
         }
 
-        public unsafe static int IndexOfVectorized(this ReadOnlySpan<byte> buffer, byte value)
+        private static unsafe int SequentialIndexOf(ref byte searchSpace, byte value, int length)
         {
-            fixed (byte* pSearchSpace = &buffer.DangerousGetPinnableReference())
-            {
-                return IndexOfVectorized(pSearchSpace, buffer.Length, value);
-            }
-        }
+            Debug.Assert(length >= 0);
 
-        public unsafe static int IndexOfVectorized(this ReadOnlySpan<byte> buffer, byte value0, byte value1)
-        {
-            fixed (byte* pSearchSpace = &buffer.DangerousGetPinnableReference())
+            IntPtr index = (IntPtr)0; // Use IntPtr for arithmetic to avoid unnecessary 64->32->64 truncations
+            while (length >= 8)
             {
-                return IndexOfVectorized(pSearchSpace, buffer.Length, value0, value1);
-            }
-        }
+                length -= 8;
 
-        public unsafe static int IndexOfVectorized(this ReadOnlySpan<byte> buffer, byte value0, byte value1, byte value2)
-        {
-            fixed (byte* pSearchSpace = &buffer.DangerousGetPinnableReference())
-            {
-                return IndexOfVectorized(pSearchSpace, buffer.Length, value0, value1, value2);
-            }
-        }
+                if (value == Unsafe.Add(ref searchSpace, index))
+                    goto Found;
+                if (value == Unsafe.Add(ref searchSpace, index + 1))
+                    goto Found1;
+                if (value == Unsafe.Add(ref searchSpace, index + 2))
+                    goto Found2;
+                if (value == Unsafe.Add(ref searchSpace, index + 3))
+                    goto Found3;
+                if (value == Unsafe.Add(ref searchSpace, index + 4))
+                    goto Found4;
+                if (value == Unsafe.Add(ref searchSpace, index + 5))
+                    goto Found5;
+                if (value == Unsafe.Add(ref searchSpace, index + 6))
+                    goto Found6;
+                if (value == Unsafe.Add(ref searchSpace, index + 7))
+                    goto Found7;
 
-        private static unsafe int IndexOfVectorized(byte* searchSpace, int length, byte value)
-        {
-            var offset = 0;
-            // If length < vector length the jump over Vector dominates the search; as the Vector section is quite chunky
-            // So do an early search and exit
-            if (length < Vector<byte>.Count)
-            {
-                for (; offset < length; offset++)
-                {
-                    var ch = searchSpace[offset];
-                    if (ch == value)
-                    {
-                        // goto rather than inline return to keep loop body small
-                        goto shortExit;
-                    }
-                }
-                // Not found
-                offset = -1;
-            shortExit:
-                return offset;
+                index += 8;
             }
 
-            if (Vector.IsHardwareAccelerated)
+            if (length >= 4)
             {
-                // Check Vector lengths
-                if (length - Vector<byte>.Count >= offset)
-                {
-                    Vector<byte> values = GetVector(value);
-                    do
-                    {
-                        var vMatches = Vector.Equals(Unsafe.Read<Vector<byte>>(searchSpace + offset), values);
-                        if (!vMatches.Equals(Vector<byte>.Zero))
-                        {
-                            // Found match, reuse Vector values to keep register pressure low
-                            values = vMatches;
-                            break;
-                        }
+                length -= 4;
 
-                        offset += Vector<byte>.Count;
-                    } while (length - Vector<byte>.Count >= offset);
+                if (value == Unsafe.Add(ref searchSpace, index))
+                    goto Found;
+                if (value == Unsafe.Add(ref searchSpace, index + 1))
+                    goto Found1;
+                if (value == Unsafe.Add(ref searchSpace, index + 2))
+                    goto Found2;
+                if (value == Unsafe.Add(ref searchSpace, index + 3))
+                    goto Found3;
 
-                    // Found match? Perform secondary search outside out of loop, so above loop body is small
-                    if (length - Vector<byte>.Count >= offset)
-                    {
-                        // Find offset of first match
-                        offset += LocateFirstFoundByte(values);
-                        // goto rather than inline return to keep function smaller
-                        goto exit;
-                    }
-                }
+                index += 4;
             }
 
-            // Haven't found match, scan through remaining
-            for (; offset < length; offset++)
+            while (length > 0)
             {
-                var ch = searchSpace[offset];
-                if (ch == value)
-                {
-                    // goto rather than inline return to keep loop body small
-                    goto exit;
-                }
+                if (value == Unsafe.Add(ref searchSpace, index))
+                    goto Found;
+
+                index += 1;
+                length--;
             }
+            return -1;
 
-            // No Matches
-            offset = -1;
-        exit:
-            return offset;
-        }
-
-        private static unsafe int IndexOfVectorized(byte* searchSpace, int length, byte value0, byte value1)
-        {
-            var offset = 0;
-            // If length < vector length the jump over Vector dominates the search; as the Vector section is quite chunky
-            // So do an early search and exit
-            if (length < Vector<byte>.Count)
-            {
-                for (; offset < length; offset++)
-                {
-                    var ch = searchSpace[offset];
-                    if (ch == value0 || ch == value1)
-                    {
-                        // goto rather than inline return to keep loop body small
-                        goto shortExit;
-                    }
-                }
-                // Not found
-                offset = -1;
-                shortExit:
-                return offset;
-            }
-
-            if (Vector.IsHardwareAccelerated)
-            {
-                // Check Vector lengths
-                if (length - Vector<byte>.Count >= offset)
-                {
-                    Vector<byte> values0 = GetVector(value0);
-                    Vector<byte> values1 = GetVector(value1);
-                    do
-                    {
-                        var vData = Unsafe.Read<Vector<byte>>(searchSpace + offset);
-                        var vMatches = Vector.BitwiseOr(
-                                            Vector.Equals(vData, values0), 
-                                            Vector.Equals(vData, values1));
-                        if (!vMatches.Equals(Vector<byte>.Zero))
-                        {
-                            // Found match, reuse Vector values0 to keep register pressure low
-                            values0 = vMatches;
-                            break;
-                        }
-
-                        offset += Vector<byte>.Count;
-                    } while (length - Vector<byte>.Count >= offset);
-
-                    // Found match? Perform secondary search outside out of loop, so above loop body is small
-                    if (length - Vector<byte>.Count >= offset)
-                    {
-                        // Find offset of first match
-                        offset += LocateFirstFoundByte(values0);
-                        // goto rather than inline return to keep function smaller
-                        goto exit;
-                    }
-                }
-            }
-
-            // Haven't found match, scan through remaining
-            for (; offset < length; offset++)
-            {
-                var ch = searchSpace[offset];
-                if (ch == value0 || ch == value1)
-                {
-                    // goto rather than inline return to keep loop body small
-                    goto exit;
-                }
-            }
-
-            // No Matches
-            offset = -1;
-            exit:
-            return offset;
-        }
-
-        private static unsafe int IndexOfVectorized(byte* searchSpace, int length, byte value0, byte value1, byte value2)
-        {
-            var offset = 0;
-            // If length < vector length the jump over Vector dominates the search; as the Vector section is quite chunky
-            // So do an early search and exit
-            if (length < Vector<byte>.Count)
-            {
-                for (; offset < length; offset++)
-                {
-                    var ch = searchSpace[offset];
-                    if (ch == value0 || ch == value1 || ch == value2)
-                    {
-                        // goto rather than inline return to keep loop body small
-                        goto shortExit;
-                    }
-                }
-                // Not found
-                offset = -1;
-                shortExit:
-                return offset;
-            }
-
-            if (Vector.IsHardwareAccelerated)
-            {
-                // Check Vector lengths
-                if (length - Vector<byte>.Count >= offset)
-                {
-                    Vector<byte> values0 = GetVector(value0);
-                    Vector<byte> values1 = GetVector(value1);
-                    Vector<byte> values2 = GetVector(value2);
-                    do
-                    {
-                        var vData = Unsafe.Read<Vector<byte>>(searchSpace + offset);
-                        var vMatches = Vector.BitwiseOr(
-                                        Vector.BitwiseOr(
-                                            Vector.Equals(vData, values0), 
-                                            Vector.Equals(vData, values1)),
-                                            Vector.Equals(vData, values2));
-                        if (!vMatches.Equals(Vector<byte>.Zero))
-                        {
-                            // Found match, reuse Vector values0 to keep register pressure low
-                            values0 = vMatches;
-                            break;
-                        }
-
-                        offset += Vector<byte>.Count;
-                    } while (length - Vector<byte>.Count >= offset);
-
-                    // Found match? Perform secondary search outside out of loop, so above loop body is small
-                    if (length - Vector<byte>.Count >= offset)
-                    {
-                        // Find offset of first match
-                        offset += LocateFirstFoundByte(values0);
-                        // goto rather than inline return to keep function smaller
-                        goto exit;
-                    }
-                }
-            }
-
-            // Haven't found match, scan through remaining
-            for (; offset < length; offset++)
-            {
-                var ch = searchSpace[offset];
-                if (ch == value0 || ch == value1 || ch == value2)
-                {
-                    // goto rather than inline return to keep loop body small
-                    goto exit;
-                }
-            }
-
-            // No Matches
-            offset = -1;
-            exit:
-            return offset;
+            Found: // Workaround for https://github.com/dotnet/coreclr/issues/9692
+            return (int)(byte*)index;
+            Found1:
+            return (int)(byte*)(index + 1);
+            Found2:
+            return (int)(byte*)(index + 2);
+            Found3:
+            return (int)(byte*)(index + 3);
+            Found4:
+            return (int)(byte*)(index + 4);
+            Found5:
+            return (int)(byte*)(index + 5);
+            Found6:
+            return (int)(byte*)(index + 6);
+            Found7:
+            return (int)(byte*)(index + 7);
         }
 
         public static bool TryIndicesOf(this Span<byte> buffer, byte value, Span<int> indices, out int numberOfIndices)
@@ -488,7 +311,7 @@ namespace System.Buffers
                     result = true;
                     break;
 
-            exitFixed:;
+                    exitFixed:;
                     indices[numberOfIndices++] = offset++;
                     if (numberOfIndices >= indices.Length)
                         break;
@@ -497,6 +320,7 @@ namespace System.Buffers
 
             return result && numberOfIndices < indices.Length;
         }
+
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int LocateFirstFoundByte(Vector<byte> match)

@@ -12,7 +12,7 @@ public class PerfHarness
     public static void Main(string[] args)
     {
         string[] assemblies = GetTestAssemblies();
-        
+
         int pos =  Array.IndexOf(args, "--assembly");
 
         using (XunitPerformanceHarness harness = new XunitPerformanceHarness(args))
@@ -48,8 +48,8 @@ public class PerfHarness
         return new [] {
             "Benchmarks",
             "System.Binary.Base64.Tests",
-            "System.Text.Primitives.Performance.Tests",
-            "System.Slices.Tests"
+            "System.Text.Primitives.Tests",
+            "System.Buffers.Primitives.Tests"
         };
     }
 }
