@@ -40,7 +40,7 @@ namespace NativeIOCP
         {
             if (bytesTransfered > 0)
             {
-                OnRead(overlapped, bytesTransfered);
+                OnReadComplete(overlapped, bytesTransfered);
             }
             else
             {
@@ -59,15 +59,15 @@ namespace NativeIOCP
             switch (_ioState)
             {
                 case State.Reading:
-                    OnRead(overlapped, bytesTransfered);
+                    OnReadComplete(overlapped, bytesTransfered);
                     break;
                 case State.Writing:
-                    OnWrite(overlapped, bytesTransfered);
+                    OnWriteComplete(overlapped, bytesTransfered);
                     break;
             }
         }
 
-        private void OnRead(ConnectionOverlapped overlapped, uint bytesTransfered)
+        private void OnReadComplete(ConnectionOverlapped overlapped, uint bytesTransfered)
         {
             if (bytesTransfered == 0)
             {
@@ -76,25 +76,19 @@ namespace NativeIOCP
             else
             {
                 var str = _requestBuffer.ToString((int)bytesTransfered);
-
-                Console.WriteLine($"Read: {bytesTransfered}");
-                Console.WriteLine(str);
                 
                 DoWrite(overlapped);
             }
         }
 
-        private void OnWrite(ConnectionOverlapped overlapped, uint bytesTransfered)
+        private void OnWriteComplete(ConnectionOverlapped overlapped, uint bytesTransfered)
         {
-            Console.WriteLine($"Written: {bytesTransfered}");
-
             // TODO: Detect hup better?
             Close();
         }
 
         private void DoRead(ConnectionOverlapped overlapped)
         {
-            Console.WriteLine($"Reading on {_socket}");
             _ioState = State.Reading;
 
             var wsabufs = WSABufs.Alloc(_requestBuffer);
@@ -112,8 +106,6 @@ namespace NativeIOCP
         {
             _ioState = State.Writing;
             
-            Console.WriteLine(_responseBuffer.ToString());
-
             var wsabufs = WSABufs.Alloc(_responseBuffer);
 
             _io.Start();
