@@ -209,9 +209,9 @@ namespace NativeIOCP.Winsock
             return Overlapped.FromNativeOverlapped(_handle);
         }
 
-        public static OverlappedHandle Alloc(Listener listener, Socket acceptSocket, Buf acceptBuffer)
+        public static OverlappedHandle Alloc(Listener listener, Socket acceptSocket, Buf requestBuffer, Buf responseBuffer)
         {
-            var connectionHandle = GCHandle.Alloc(new Connection(listener, acceptSocket, acceptBuffer));
+            var connectionHandle = GCHandle.Alloc(new Connection(listener, acceptSocket, requestBuffer, responseBuffer));
             var overlappedHandle = GCHandle.Alloc(NativeOverlapped.ForConnection(connectionHandle), GCHandleType.Pinned);
 
             return new OverlappedHandle { _handle = overlappedHandle };
@@ -227,11 +227,11 @@ namespace NativeIOCP.Winsock
     // TODO: Replace with proper buffer
     struct Buf
     {
-        private IntPtr _data;
+        private GCHandle _handle;
         private int _length;
 
         public int Length => _length;
-        public IntPtr Pointer => _data;
+        public IntPtr Pointer => _handle.AddrOfPinnedObject();
         
         public static Buf Alloc(int length)
         {
@@ -245,14 +245,24 @@ namespace NativeIOCP.Winsock
 
             return new Buf
             {
-                _data = handle.AddrOfPinnedObject(),
+                _handle = handle,
                 _length = length
             };
         }
 
-        public string AsString(int written)
+        public void Free()
         {
-            return Marshal.PtrToStringUTF8(_data, written);
+            _handle.Free();
+        }
+
+        public string ToString(int written)
+        {
+            return Marshal.PtrToStringUTF8(Pointer, written);
+        }
+
+        public override string ToString()
+        {
+            return ToString(Length);
         }
     }
 

@@ -3,6 +3,7 @@ using NativeIOCP.Winsock;
 using System;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace NativeIOCP
 {
@@ -62,7 +63,14 @@ namespace NativeIOCP
 
         public void Wait()
         {
+            _accept.Wait(false);
             _io.Wait(false);
+        }
+
+        public void Stop()
+        {
+            _accept.Wait(true);
+            _io.Wait(true);
         }
 
         internal void Free(Socket socket)
@@ -98,9 +106,13 @@ namespace NativeIOCP
             var readSize = readWriteSize / 2;
 
             var acceptSocket = SocketFactory.Alloc();
-            var acceptBuffer = Buf.Alloc(bufferSize);
-            
-            var overlapped = OverlappedHandle.Alloc(this, acceptSocket, acceptBuffer);
+            var requestBuffer = Buf.Alloc(bufferSize);
+
+            var body = "Hello, world!";
+            var res = $"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\n\r\n{body}";
+            var responseBuffer = Buf.Alloc(Encoding.UTF8.GetBytes(res));
+
+            var overlapped = OverlappedHandle.Alloc(this, acceptSocket, requestBuffer, responseBuffer);
 
             if (_connections.ContainsKey(acceptSocket))
             {
@@ -112,7 +124,7 @@ namespace NativeIOCP
             var acceptResult = _acceptFn(
                 _socket,
                 acceptSocket,
-                acceptBuffer.Pointer, 0,
+                requestBuffer.Pointer, 0,
                 (uint)addressSize,
                 (uint)addressSize,
                 out uint received,

@@ -1,7 +1,6 @@
 ﻿using NativeIOCP.Winsock;
 using System;
 using System.Runtime.InteropServices;
-using System.Threading;
 
 namespace NativeIOCP.ThreadPool
 {
