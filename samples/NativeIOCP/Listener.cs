@@ -89,6 +89,7 @@ namespace NativeIOCP
         
         private void AcceptNextConnection(CallbackInstance callbackInstance, IntPtr context, WorkHandle work)
         {
+            // TODO: Use a proper buffer
             var bufferSize = 4096;
             var addressSize = SocketAddressSize + 16;
             var readSize = bufferSize - (addressSize * 2);

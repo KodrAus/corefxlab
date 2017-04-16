@@ -75,16 +75,13 @@ namespace NativeIOCP
             }
             else
             {
-                var str = _requestBuffer.ToString((int)bytesTransfered);
-                
                 DoWrite(overlapped);
             }
         }
 
         private void OnWriteComplete(ConnectionOverlapped overlapped, uint bytesTransfered)
         {
-            // TODO: Detect hup better?
-            Close();
+            DoRead(overlapped);
         }
 
         private void DoRead(ConnectionOverlapped overlapped)
@@ -95,10 +92,15 @@ namespace NativeIOCP
 
             _io.Start();
             var readResult = WinsockImports.WSARecv(_socket, wsabufs, 1, out uint received, WinsockImports.ReadFlags.AddrOfPinnedObject(), overlapped, null);
-            if (readResult != WinsockImports.Success && readResult != WinsockImports.IOPending)
+            if (readResult != WinsockImports.Success)
             {
-                Free();
-                throw new Exception($"read failed: {readResult}");
+                var error = WinsockImports.WSAGetLastError();
+
+                if (error != WinsockImports.IOPending)
+                {
+                    Free();
+                    throw new Exception($"read failed: {readResult}");
+                }
             }
         }
 
@@ -110,10 +112,15 @@ namespace NativeIOCP
 
             _io.Start();
             var writeResult = WinsockImports.WSASend(_socket, wsabufs, 1, out uint sent, 0, overlapped, null);
-            if (writeResult != WinsockImports.Success && writeResult != WinsockImports.IOPending)
+            if (writeResult != WinsockImports.Success)
             {
-                Free();
-                throw new Exception($"write failed: {writeResult}");
+                var error = WinsockImports.WSAGetLastError();
+
+                if (error != WinsockImports.IOPending)
+                {
+                    Free();
+                    throw new Exception($"write failed: {writeResult}");
+                }
             }
         }
 
