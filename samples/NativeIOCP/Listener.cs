@@ -1,6 +1,7 @@
 ﻿using NativeIOCP.ThreadPool;
 using NativeIOCP.Winsock;
 using System;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 
 namespace NativeIOCP
@@ -15,28 +16,17 @@ namespace NativeIOCP
         private WorkHandle _accept;
         private AcceptEx _acceptFn;
 
-        private Listener() { }
+        private ConcurrentDictionary<Socket, OverlappedHandle> _connections;
+
+        private Listener()
+        {
+            _connections = new ConcurrentDictionary<Socket, OverlappedHandle>();
+        }
 
         public static Listener OnAddress(System.Net.IPEndPoint listenOn)
         {
-            var listenOnBytes = listenOn.Address.MapToIPv4().GetAddressBytes();
-
-            ushort port = (ushort)listenOn.Port;
-
-            var inAddress = new Ipv4InternetAddress();
-            inAddress.Byte1 = listenOnBytes[0];
-            inAddress.Byte2 = listenOnBytes[1];
-            inAddress.Byte3 = listenOnBytes[2];
-            inAddress.Byte4 = listenOnBytes[3];
-
-            var sa = new SocketAddress();
-            sa.Family = AddressFamilies.Internet;
-            sa.Port = WinsockImports.htons(port);
-            sa.IpAddress = inAddress;
-
             var version = new Winsock.Version(2, 2);
-            WindowsSocketsData wsaData;
-            var startupResult = WinsockImports.WSAStartup((short)version.Raw, out wsaData);
+            var startupResult = WinsockImports.WSAStartup((short)version.Raw, out WindowsSocketsData wsaData);
 
             if (startupResult != System.Net.Sockets.SocketError.Success)
             {
@@ -44,11 +34,11 @@ namespace NativeIOCP
             }
 
             Socket listenSocket = SocketFactory.Alloc();
-
             AcceptEx acceptFn = WinsockImports.Initalize(listenSocket);
+            SocketAddress address = SocketAddress.FromIPEndPoint(listenOn);
 
             var listener = new Listener();
-            listener._address = sa;
+            listener._address = address;
             listener._acceptFn = acceptFn;
             listener._socket = listenSocket;
             listener._io = IoHandle.Create(CallbackEnvironment.Default(), IntPtr.Zero, listenSocket, listener.OnAccept);
@@ -75,6 +65,16 @@ namespace NativeIOCP
             _io.Wait(false);
         }
 
+        internal void Free(Socket socket)
+        {
+            if (!_connections.TryRemove(socket, out OverlappedHandle overlapped))
+            {
+                throw new Exception("unknown socket to free");
+            }
+
+            overlapped.Free();
+        }
+
         private void OnAccept(CallbackInstance callbackInstance, IntPtr context, Overlapped overlapped, uint ioResult, uint bytesTransfered, IoHandle io)
         {
             if (ioResult != WinsockImports.Success)
@@ -85,7 +85,9 @@ namespace NativeIOCP
 
             _accept.Submit();
 
-            overlapped.AcceptedConnection().OnAccept(overlapped, bytesTransfered);
+            Console.WriteLine(overlapped.ToString());
+
+            overlapped.Connection().OnAccept(overlapped, bytesTransfered);
         }
         
         private void AcceptNextConnection(CallbackInstance callbackInstance, IntPtr context, WorkHandle work)
@@ -97,19 +99,24 @@ namespace NativeIOCP
 
             var acceptSocket = SocketFactory.Alloc();
             var acceptBuffer = Buf.Alloc(bufferSize);
-            var overlapped = OverlappedFactory.Alloc(acceptSocket, acceptBuffer);
+            
+            var overlapped = OverlappedHandle.Alloc(this, acceptSocket, acceptBuffer);
+
+            if (_connections.ContainsKey(acceptSocket))
+            {
+                throw new Exception("Attempted to add the same socket multiple times");
+            }
+            _connections.GetOrAdd(acceptSocket, overlapped);
 
             _io.Start();
-
-            uint received;
             var acceptResult = _acceptFn(
                 _socket,
                 acceptSocket,
-                acceptBuffer.Pointer, (uint)readSize,
+                acceptBuffer.Pointer, 0,
                 (uint)addressSize,
                 (uint)addressSize,
-                out received,
-                overlapped
+                out uint received,
+                overlapped.Value()
             );
 
             if (!acceptResult)

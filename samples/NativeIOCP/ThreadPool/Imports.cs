@@ -6,7 +6,7 @@ using System.Threading;
 namespace NativeIOCP.ThreadPool
 {
     [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true)]
-    public unsafe delegate void IoCallback(
+    unsafe delegate void IoCallback(
         [In, Out] CallbackInstance callbackInstance,
         [In, Out, Optional] IntPtr context,
         [In, Out, Optional] Overlapped overlapped,
@@ -16,14 +16,14 @@ namespace NativeIOCP.ThreadPool
     );
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true)]
-    public delegate void WorkCallback(
+    delegate void WorkCallback(
         [In, Out] CallbackInstance callbackInstance,
         [In, Out, Optional] IntPtr context,
         [In, Out] WorkHandle work
     );
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct WorkHandle
+    struct WorkHandle
     {
         private IntPtr _value;
 
@@ -44,7 +44,7 @@ namespace NativeIOCP.ThreadPool
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct IoHandle
+    struct IoHandle
     {
         private IntPtr _value;
 
@@ -70,7 +70,7 @@ namespace NativeIOCP.ThreadPool
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct CallbackEnvironment
+    struct CallbackEnvironment
     {
         private IntPtr _value;
 
@@ -81,12 +81,12 @@ namespace NativeIOCP.ThreadPool
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct CallbackInstance
+    struct CallbackInstance
     {
         private IntPtr _value;
     }
 
-    public static class ThreadPoolImports
+    static class ThreadPoolImports
     {
         const string K32 = "Kernel32.dll";
 

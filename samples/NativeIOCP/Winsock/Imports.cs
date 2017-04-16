@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 namespace NativeIOCP.Winsock
 {
     [StructLayout(LayoutKind.Sequential)]
-    internal struct WindowsSocketsData
+    struct WindowsSocketsData
     {
         internal short Version;
         internal short HighVersion;
@@ -19,16 +19,36 @@ namespace NativeIOCP.Winsock
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct SocketAddress
+    unsafe struct SocketAddress
     {
         public AddressFamilies Family;
         public ushort Port;
         public Ipv4InternetAddress IpAddress;
         public fixed byte Padding[8];
+
+        public static SocketAddress FromIPEndPoint(System.Net.IPEndPoint ipEndPoint)
+        {
+            var listenOnBytes = ipEndPoint.Address.MapToIPv4().GetAddressBytes();
+
+            ushort port = (ushort)ipEndPoint.Port;
+
+            var inAddress = new Ipv4InternetAddress();
+            inAddress.Byte1 = listenOnBytes[0];
+            inAddress.Byte2 = listenOnBytes[1];
+            inAddress.Byte3 = listenOnBytes[2];
+            inAddress.Byte4 = listenOnBytes[3];
+
+            var sa = new SocketAddress();
+            sa.Family = AddressFamilies.Internet;
+            sa.Port = WinsockImports.htons(port);
+            sa.IpAddress = inAddress;
+
+            return sa;
+        }
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 4)]
-    public struct Ipv4InternetAddress
+    struct Ipv4InternetAddress
     {
         [FieldOffset(0)]
         public byte Byte1;
@@ -40,22 +60,22 @@ namespace NativeIOCP.Winsock
         public byte Byte4;
     }
 
-    public enum Protocol : short
+    enum Protocol : short
     {
         IpProtocolTcp = 6,
     }
 
-    public enum SocketType : short
+    enum SocketType : short
     {
         Stream = 1,
     }
 
-    public enum AddressFamilies : short
+    enum AddressFamilies : short
     {
         Internet = 2,
     }
 
-    public enum SocketFlags : uint
+    enum SocketFlags : uint
     {
         Overlapped = 0x01,
         MultipointCRoot = 0x02,
@@ -67,7 +87,7 @@ namespace NativeIOCP.Winsock
         RegisteredIO = 0x100
     }
 
-    public struct Version
+    struct Version
     {
         public ushort Raw;
 
@@ -105,7 +125,7 @@ namespace NativeIOCP.Winsock
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct Socket
+    struct Socket
     {
         private IntPtr _value;
 
@@ -115,7 +135,7 @@ namespace NativeIOCP.Winsock
         }
     }
 
-    public static class SocketFactory
+    static class SocketFactory
     {
         public static Socket Alloc()
         {
@@ -138,41 +158,74 @@ namespace NativeIOCP.Winsock
         }
     }
 
-    public struct NativeOverlapped
+    [StructLayout(LayoutKind.Sequential)]
+    struct NativeOverlapped
     {
-        public System.Threading.NativeOverlapped Overlapped;
+        private System.Threading.NativeOverlapped _overlapped;
+        private GCHandle _connectionHandle;
 
-        public Connection Connection;
+        public static NativeOverlapped ForConnection(GCHandle connectionHandle)
+        {
+            return new NativeOverlapped { _connectionHandle = connectionHandle };
+        }
+        
+        public Connection Connection()
+        {
+            return (Connection)_connectionHandle.Target;
+        }
+
+        public void Free()
+        {
+            _connectionHandle.Free();
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct Overlapped
+    struct Overlapped
     {
         private IntPtr _value;
 
-        internal static Overlapped FromNativeOverlapped(IntPtr nativeOverlapped)
+        public static Overlapped FromNativeOverlapped(GCHandle nativeOverlapped)
         {
-            return new Overlapped { _value = nativeOverlapped };
+            return new Overlapped { _value = nativeOverlapped.AddrOfPinnedObject() };
         }
 
-        public Connection AcceptedConnection()
+        public Connection Connection()
         {
-            return Marshal.PtrToStructure<NativeOverlapped>(_value).Connection;
+            return Marshal.PtrToStructure<NativeOverlapped>(_value).Connection();
+        }
+
+        public override string ToString()
+        {
+            return _value.ToString();
         }
     }
 
-    public static class OverlappedFactory
+    struct OverlappedHandle
     {
-        public static Overlapped Alloc(Socket acceptSocket, Buf acceptBuffer)
+        private GCHandle _handle;
+        public Overlapped Value()
         {
-            var connection = new Connection(acceptSocket, acceptBuffer);
-            var handle = GCHandle.Alloc(new NativeOverlapped { Connection = connection }, GCHandleType.Pinned);
+            return Overlapped.FromNativeOverlapped(_handle);
+        }
 
-            return Overlapped.FromNativeOverlapped(handle.AddrOfPinnedObject());
+        public static OverlappedHandle Alloc(Listener listener, Socket acceptSocket, Buf acceptBuffer)
+        {
+            var connectionHandle = GCHandle.Alloc(new Connection(listener, acceptSocket, acceptBuffer));
+            var overlappedHandle = GCHandle.Alloc(NativeOverlapped.ForConnection(connectionHandle), GCHandleType.Pinned);
+
+            return new OverlappedHandle { _handle = overlappedHandle };
+        }
+
+        public void Free()
+        {
+            ((NativeOverlapped)_handle.Target).Free();
+            _handle.Free();
         }
     }
-
-    public struct Buf
+    
+    // TODO: Replace with proper buffer
+    struct Buf
     {
         private IntPtr _data;
         private int _length;
@@ -182,7 +235,13 @@ namespace NativeIOCP.Winsock
         
         public static Buf Alloc(int length)
         {
-            var handle = GCHandle.Alloc(new byte[length], GCHandleType.Pinned);
+            return Alloc(new byte[length]);
+        }
+
+        public static Buf Alloc(byte[] data)
+        {
+            var length = data.Length;
+            var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
 
             return new Buf
             {
@@ -198,7 +257,7 @@ namespace NativeIOCP.Winsock
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct WSABuf
+    struct WSABuf
     {
         private uint _length;
         private IntPtr _buf;
@@ -214,7 +273,7 @@ namespace NativeIOCP.Winsock
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct WSABufs
+    struct WSABufs
     {
         private IntPtr _value;
 
@@ -230,7 +289,7 @@ namespace NativeIOCP.Winsock
     }
         
     [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true)]
-    public unsafe delegate bool AcceptEx(
+    unsafe delegate bool AcceptEx(
         [In] Socket listenSocket,
         [In] Socket acceptSocket,
         [In] IntPtr outputBuffer,
@@ -242,14 +301,14 @@ namespace NativeIOCP.Winsock
     );
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true)]
-    public unsafe delegate bool OverlappedCompletionRoutine(
-    [In] uint error,
-    [In] uint transfered,
-    [In] Overlapped overlapped,
-    [In] IntPtr flags
-);
+    unsafe delegate bool OverlappedCompletionRoutine(
+        [In] uint error,
+        [In] uint transfered,
+        [In] Overlapped overlapped,
+        [In] IntPtr flags
+    );
 
-    public static class WinsockImports
+    static class WinsockImports
     {
         const string Ws232 = "WS2_32.dll";
         
@@ -319,6 +378,9 @@ namespace NativeIOCP.Winsock
 
         [DllImport(Ws232, SetLastError = true)]
         public static extern int WSARecv([In] Socket socket, [In, Out] WSABufs buffers, [In] uint bufferCount, [Out] out uint numberOfBytesRecvd, [In, Out] IntPtr flags, [In] Overlapped overlapped, [In] OverlappedCompletionRoutine completionRoutine);
+
+        [DllImport(Ws232, SetLastError = true)]
+        public static extern int WSASend([In] Socket socket, [In] WSABufs buffers, [In] uint bufferCount, [Out] out uint numberOfBytesSent, [In] uint flags, [In] Overlapped overlapped, [In] OverlappedCompletionRoutine completionRoutine);
 
         [DllImport(Ws232, SetLastError = true)]
         public static extern ushort htons([In] ushort hostshort);
