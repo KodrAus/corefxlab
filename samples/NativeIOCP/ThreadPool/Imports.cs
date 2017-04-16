@@ -8,7 +8,7 @@ namespace NativeIOCP.ThreadPool
     unsafe delegate void IoCallback(
         [In, Out] CallbackInstance callbackInstance,
         [In, Out, Optional] IntPtr context,
-        [In, Out, Optional] Overlapped overlapped,
+        [In, Out, Optional] ConnectionOverlapped overlapped,
         [In] uint ioResult,
         [In] uint bytesTransfered,
         [In, Out] IoHandle io

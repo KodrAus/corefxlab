@@ -16,12 +16,10 @@ namespace NativeIOCP
         private IoHandle _io;
         private WorkHandle _accept;
         private AcceptEx _acceptFn;
-
-        private ConcurrentDictionary<Socket, OverlappedHandle> _connections;
-
+        
         private Listener()
         {
-            _connections = new ConcurrentDictionary<Socket, OverlappedHandle>();
+
         }
 
         public static Listener OnAddress(System.Net.IPEndPoint listenOn)
@@ -72,18 +70,8 @@ namespace NativeIOCP
             _accept.Wait(true);
             _io.Wait(true);
         }
-
-        internal void Free(Socket socket)
-        {
-            if (!_connections.TryRemove(socket, out OverlappedHandle overlapped))
-            {
-                throw new Exception("unknown socket to free");
-            }
-
-            overlapped.Free();
-        }
-
-        private void OnAccept(CallbackInstance callbackInstance, IntPtr context, Overlapped overlapped, uint ioResult, uint bytesTransfered, IoHandle io)
+        
+        private void OnAccept(CallbackInstance callbackInstance, IntPtr context, ConnectionOverlapped overlapped, uint ioResult, uint bytesTransfered, IoHandle io)
         {
             if (ioResult != WinsockImports.Success)
             {
@@ -92,34 +80,26 @@ namespace NativeIOCP
             }
 
             _accept.Submit();
-
-            Console.WriteLine(overlapped.ToString());
-
+            
             overlapped.Connection().OnAccept(overlapped, bytesTransfered);
         }
         
         private void AcceptNextConnection(CallbackInstance callbackInstance, IntPtr context, WorkHandle work)
         {
-            var bufferSize = 1024;
+            var bufferSize = 4096;
             var addressSize = SocketAddressSize + 16;
             var readWriteSize = bufferSize - (addressSize * 2);
             var readSize = readWriteSize / 2;
 
             var acceptSocket = SocketFactory.Alloc();
             var requestBuffer = Buf.Alloc(bufferSize);
-
+            
             var body = "Hello, world!";
             var res = $"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\n\r\n{body}";
             var responseBuffer = Buf.Alloc(Encoding.UTF8.GetBytes(res));
 
-            var overlapped = OverlappedHandle.Alloc(this, acceptSocket, requestBuffer, responseBuffer);
-
-            if (_connections.ContainsKey(acceptSocket))
-            {
-                throw new Exception("Attempted to add the same socket multiple times");
-            }
-            _connections.GetOrAdd(acceptSocket, overlapped);
-
+            var overlapped = ConnectionOverlappedHandle.Alloc(acceptSocket, requestBuffer, responseBuffer);
+            
             _io.Start();
             var acceptResult = _acceptFn(
                 _socket,

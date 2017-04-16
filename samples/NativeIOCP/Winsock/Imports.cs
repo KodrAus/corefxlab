@@ -133,6 +133,11 @@ namespace NativeIOCP.Winsock
         {
             return _value != IntPtr.Zero;
         }
+
+        public override string ToString()
+        {
+            return _value.ToString();
+        }
     }
 
     static class SocketFactory
@@ -159,14 +164,14 @@ namespace NativeIOCP.Winsock
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    struct NativeOverlapped
+    struct NativeConnectionOverlapped
     {
         private System.Threading.NativeOverlapped _overlapped;
         private GCHandle _connectionHandle;
 
-        public static NativeOverlapped ForConnection(GCHandle connectionHandle)
+        public static NativeConnectionOverlapped ForConnection(GCHandle connectionHandle)
         {
-            return new NativeOverlapped { _connectionHandle = connectionHandle };
+            return new NativeConnectionOverlapped { _connectionHandle = connectionHandle };
         }
         
         public Connection Connection()
@@ -179,47 +184,47 @@ namespace NativeIOCP.Winsock
             _connectionHandle.Free();
         }
     }
-
+    
     [StructLayout(LayoutKind.Sequential)]
-    struct Overlapped
+    struct ConnectionOverlapped
     {
         private IntPtr _value;
 
-        public static Overlapped FromNativeOverlapped(GCHandle nativeOverlapped)
+        public static ConnectionOverlapped FromNativeOverlapped(GCHandle nativeOverlapped)
         {
-            return new Overlapped { _value = nativeOverlapped.AddrOfPinnedObject() };
+            return new ConnectionOverlapped { _value = nativeOverlapped.AddrOfPinnedObject() };
         }
 
         public Connection Connection()
         {
-            return Marshal.PtrToStructure<NativeOverlapped>(_value).Connection();
-        }
-
-        public override string ToString()
-        {
-            return _value.ToString();
+            return Marshal.PtrToStructure<NativeConnectionOverlapped>(_value).Connection();
         }
     }
 
-    struct OverlappedHandle
+    struct ConnectionOverlappedHandle
     {
         private GCHandle _handle;
-        public Overlapped Value()
+        public ConnectionOverlapped Value()
         {
-            return Overlapped.FromNativeOverlapped(_handle);
+            return ConnectionOverlapped.FromNativeOverlapped(_handle);
         }
 
-        public static OverlappedHandle Alloc(Listener listener, Socket acceptSocket, Buf requestBuffer, Buf responseBuffer)
+        public static ConnectionOverlappedHandle Alloc(Socket acceptSocket, Buf requestBuffer, Buf responseBuffer)
         {
-            var connectionHandle = GCHandle.Alloc(new Connection(listener, acceptSocket, requestBuffer, responseBuffer));
-            var overlappedHandle = GCHandle.Alloc(NativeOverlapped.ForConnection(connectionHandle), GCHandleType.Pinned);
+            var connection = new Connection(acceptSocket, requestBuffer, responseBuffer);
+            var connectionHandle = GCHandle.Alloc(connection);
+            var overlappedHandle = GCHandle.Alloc(NativeConnectionOverlapped.ForConnection(connectionHandle), GCHandleType.Pinned);
 
-            return new OverlappedHandle { _handle = overlappedHandle };
+            var overlapped = new ConnectionOverlappedHandle { _handle = overlappedHandle };
+
+            connection.OnFree(() => overlapped.Free());
+
+            return overlapped;
         }
 
         public void Free()
         {
-            ((NativeOverlapped)_handle.Target).Free();
+            ((NativeConnectionOverlapped)_handle.Target).Free();
             _handle.Free();
         }
     }
@@ -307,14 +312,14 @@ namespace NativeIOCP.Winsock
         [In] uint localAddressLength,
         [In] uint remoteAddressLength,
         [Out] out uint bytesReceived,
-        [In] Overlapped overlapped
+        [In] ConnectionOverlapped overlapped
     );
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true)]
     unsafe delegate bool OverlappedCompletionRoutine(
         [In] uint error,
         [In] uint transfered,
-        [In] Overlapped overlapped,
+        [In] ConnectionOverlapped overlapped,
         [In] IntPtr flags
     );
 
@@ -367,6 +372,8 @@ namespace NativeIOCP.Winsock
             return acceptEx;
         }
 
+        public static GCHandle ReadFlags = GCHandle.Alloc(0, GCHandleType.Pinned);
+
         [DllImport(Ws232, SetLastError = true)]
         private static extern int WSAIoctl(
           [In] Socket socket,
@@ -387,10 +394,10 @@ namespace NativeIOCP.Winsock
         public static extern Socket WSASocket([In] AddressFamilies af, [In] SocketType type, [In] Protocol protocol, [In] IntPtr lpProtocolInfo, [In] Int32 group, [In] SocketFlags dwFlags);
 
         [DllImport(Ws232, SetLastError = true)]
-        public static extern int WSARecv([In] Socket socket, [In, Out] WSABufs buffers, [In] uint bufferCount, [Out] out uint numberOfBytesRecvd, [In, Out] IntPtr flags, [In] Overlapped overlapped, [In] OverlappedCompletionRoutine completionRoutine);
+        public static extern int WSARecv([In] Socket socket, [In, Out] WSABufs buffers, [In] uint bufferCount, [Out] out uint numberOfBytesRecvd, [In, Out] IntPtr flags, [In] ConnectionOverlapped overlapped, [In] OverlappedCompletionRoutine completionRoutine);
 
         [DllImport(Ws232, SetLastError = true)]
-        public static extern int WSASend([In] Socket socket, [In] WSABufs buffers, [In] uint bufferCount, [Out] out uint numberOfBytesSent, [In] uint flags, [In] Overlapped overlapped, [In] OverlappedCompletionRoutine completionRoutine);
+        public static extern int WSASend([In] Socket socket, [In] WSABufs buffers, [In] uint bufferCount, [Out] out uint numberOfBytesSent, [In] uint flags, [In] ConnectionOverlapped overlapped, [In] OverlappedCompletionRoutine completionRoutine);
 
         [DllImport(Ws232, SetLastError = true)]
         public static extern ushort htons([In] ushort hostshort);

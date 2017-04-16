@@ -4,7 +4,7 @@ using System.Net;
 
 /*
     TODO:
-    - Handle write and hup.
+    - Timing issue with socket close/accept and read? Issues on handles completing
     - Memory leaks: NOTHING IS FREED AT THIS POINT.
       We can probably keep the GCHandles in a separate object that stays in managed code
       and cleans up after the connection when it's done.
@@ -28,7 +28,7 @@ namespace NativeIOCP
 
             Console.WriteLine("Listening");
 
-            listener.Wait();
+            Console.ReadLine();
 
             WinsockImports.WSACleanup();
         }

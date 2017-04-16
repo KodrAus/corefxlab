@@ -1,8 +1,6 @@
 ﻿using NativeIOCP.ThreadPool;
 using NativeIOCP.Winsock;
 using System;
-using System.Runtime.InteropServices;
-using System.Text;
 
 namespace NativeIOCP
 {
@@ -14,29 +12,32 @@ namespace NativeIOCP
             Writing = 1
         }
 
-        private Listener _listener;
+        private Action _freeFn;
         private State _ioState;
         private Socket _socket;
+        private IoHandle _io;
+
         private Buf _requestBuffer;
         private Buf _responseBuffer;
-        private IoHandle _io;
-        private GCHandle _flags;
         
-        public Connection(Listener listener, Socket socket, Buf requestBuffer, Buf responseBuffer)
+        public Connection(Socket socket, Buf requestBuffer, Buf responseBuffer)
         {
-            _ioState = State.Reading;
-            _socket = socket;
             _requestBuffer = requestBuffer;
             _responseBuffer = responseBuffer;
-            _io = new IoHandle();
-            _flags = GCHandle.Alloc(0, GCHandleType.Pinned);
-            _listener = listener;
+            
+            _socket = socket;
+
+            _ioState = State.Reading;
+            _io = IoHandle.Create(CallbackEnvironment.Default(), IntPtr.Zero, _socket, OnComplete);
         }
 
-        public void OnAccept(Overlapped overlapped, uint bytesTransfered)
+        public void OnFree(Action freeFn)
         {
-            _io = IoHandle.Create(CallbackEnvironment.Default(), IntPtr.Zero, _socket, OnComplete);
+            _freeFn = freeFn;
+        }
 
+        public void OnAccept(ConnectionOverlapped overlapped, uint bytesTransfered)
+        {
             if (bytesTransfered > 0)
             {
                 OnRead(overlapped, bytesTransfered);
@@ -50,7 +51,7 @@ namespace NativeIOCP
         private void OnComplete(
             CallbackInstance callbackInstance,
             IntPtr context,
-            Overlapped overlapped,
+            ConnectionOverlapped overlapped,
             uint ioResult,
             uint bytesTransfered,
             IoHandle io)
@@ -66,7 +67,7 @@ namespace NativeIOCP
             }
         }
 
-        private void OnRead(Overlapped overlapped, uint bytesTransfered)
+        private void OnRead(ConnectionOverlapped overlapped, uint bytesTransfered)
         {
             if (bytesTransfered == 0)
             {
@@ -83,31 +84,31 @@ namespace NativeIOCP
             }
         }
 
-        private void OnWrite(Overlapped overlapped, uint bytesTransfered)
+        private void OnWrite(ConnectionOverlapped overlapped, uint bytesTransfered)
         {
             Console.WriteLine($"Written: {bytesTransfered}");
 
+            // TODO: Detect hup better?
             Close();
         }
 
-        private void DoRead(Overlapped overlapped)
+        private void DoRead(ConnectionOverlapped overlapped)
         {
+            Console.WriteLine($"Reading on {_socket}");
             _ioState = State.Reading;
 
             var wsabufs = WSABufs.Alloc(_requestBuffer);
 
-            // TODO: Read may complete synchronously here.
-            // I think there's a sockopt to prevent callbacks when results are synchronous.
             _io.Start();
-            var readResult = WinsockImports.WSARecv(_socket, wsabufs, 1, out uint received, _flags.AddrOfPinnedObject(), overlapped, null);
+            var readResult = WinsockImports.WSARecv(_socket, wsabufs, 1, out uint received, WinsockImports.ReadFlags.AddrOfPinnedObject(), overlapped, null);
             if (readResult != WinsockImports.Success && readResult != WinsockImports.IOPending)
             {
-                _io.Cancel();
+                Free();
                 throw new Exception($"read failed: {readResult}");
             }
         }
 
-        private void DoWrite(Overlapped overlapped)
+        private void DoWrite(ConnectionOverlapped overlapped)
         {
             _ioState = State.Writing;
             
@@ -119,20 +120,30 @@ namespace NativeIOCP
             var writeResult = WinsockImports.WSASend(_socket, wsabufs, 1, out uint sent, 0, overlapped, null);
             if (writeResult != WinsockImports.Success && writeResult != WinsockImports.IOPending)
             {
-                _io.Cancel();
+                Free();
                 throw new Exception($"write failed: {writeResult}");
             }
         }
 
         private void Close()
         {
-            _io.Cancel();
-            WinsockImports.closesocket(_socket);
+            var closeResult = WinsockImports.closesocket(_socket);
 
-            _flags.Free();
+            Free();
+
+            if (closeResult != WinsockImports.Success)
+            {
+                throw new Exception($"Close failed: {closeResult}");
+            }
+        }
+
+        private void Free()
+        {
+            _io.Cancel();
             _requestBuffer.Free();
             _responseBuffer.Free();
-            _listener.Free(_socket);
+
+            _freeFn?.Invoke();
         }
     }
 }
