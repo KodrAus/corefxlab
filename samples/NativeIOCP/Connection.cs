@@ -36,6 +36,8 @@ namespace NativeIOCP
         {
             var buf = WSABufs.Alloc(_buf);
 
+            // TODO: Read may complete synchronously here.
+            // I think there's a sockopt to prevent callbacks when results are synchronous.
             _io.Start();
             var readResult = WinsockImports.WSARecv(_socket, buf, 1, out uint received, _flags.AddrOfPinnedObject(), overlapped, null);
             if (readResult != WinsockImports.Success && readResult != WinsockImports.IOPending)

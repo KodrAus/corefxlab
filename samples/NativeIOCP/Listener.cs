@@ -77,7 +77,7 @@ namespace NativeIOCP
         {
             if (ioResult != WinsockImports.Success)
             {
-                io.Cancel();
+                _io.Cancel();
                 throw new Exception($"accept failed: {ioResult}");
             }
 
