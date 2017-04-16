@@ -142,7 +142,7 @@ namespace NativeIOCP.Winsock
     {
         public System.Threading.NativeOverlapped Overlapped;
 
-        public GCHandle Connection;
+        public Connection Connection;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -150,15 +150,14 @@ namespace NativeIOCP.Winsock
     {
         private IntPtr _value;
 
-        internal static unsafe Overlapped FromNativeOverlapped(IntPtr nativeOverlapped)
+        internal static Overlapped FromNativeOverlapped(IntPtr nativeOverlapped)
         {
             return new Overlapped { _value = nativeOverlapped };
         }
 
         public Connection AcceptedConnection()
         {
-            var connection = Marshal.PtrToStructure<NativeOverlapped>(_value).Connection;
-            return (Connection)connection.Target;
+            return Marshal.PtrToStructure<NativeOverlapped>(_value).Connection;
         }
     }
 
@@ -166,13 +165,10 @@ namespace NativeIOCP.Winsock
     {
         public static Overlapped Alloc(Socket acceptSocket, Buf acceptBuffer)
         {
-            var connection = GCHandle.Alloc(new Connection(acceptSocket, acceptBuffer), GCHandleType.Pinned);
+            var connection = new Connection(acceptSocket, acceptBuffer);
             var handle = GCHandle.Alloc(new NativeOverlapped { Connection = connection }, GCHandleType.Pinned);
 
-            unsafe
-            {
-                return Overlapped.FromNativeOverlapped(handle.AddrOfPinnedObject());
-            }
+            return Overlapped.FromNativeOverlapped(handle.AddrOfPinnedObject());
         }
     }
 

@@ -5,14 +5,14 @@ using System.Runtime.InteropServices;
 
 namespace NativeIOCP
 {
-    enum State
-    {
-        IsReading = 0,
-        IsWriting = 1
-    }
-
     public struct Connection
     {
+        enum State
+        {
+            IsReading = 0,
+            IsWriting = 1
+        }
+
         private Socket _socket;
         private Buf _buf;
         private IoHandle _io;
@@ -26,13 +26,21 @@ namespace NativeIOCP
             _flags = GCHandle.Alloc(0, GCHandleType.Pinned);
         }
 
-        public void OnAccept(Overlapped overlapped)
+        public void OnAccept(Overlapped overlapped, uint bytesTransfered)
         {
-            _io = IoHandle.Create(CallbackEnvironment.Default(), IntPtr.Zero, _socket, OnReadOrWrite);
-            Read(overlapped);
+            _io = IoHandle.Create(CallbackEnvironment.Default(), IntPtr.Zero, _socket, OnComplete);
+
+            if (bytesTransfered > 0)
+            {
+                OnRead(bytesTransfered);
+            }
+            else
+            {
+                DoRead(overlapped);
+            }
         }
 
-        private void Read(Overlapped overlapped)
+        private void DoRead(Overlapped overlapped)
         {
             var buf = WSABufs.Alloc(_buf);
 
@@ -47,13 +55,18 @@ namespace NativeIOCP
             }
         }
 
-        private void OnReadOrWrite(
+        private void OnComplete(
             CallbackInstance callbackInstance,
             IntPtr context,
             Overlapped overlapped,
             uint ioResult,
             uint bytesTransfered,
             IoHandle io)
+        {
+            OnRead(bytesTransfered);
+        }
+
+        private void OnRead(uint bytesTransfered)
         {
             Console.WriteLine($"Read: {bytesTransfered}");
 

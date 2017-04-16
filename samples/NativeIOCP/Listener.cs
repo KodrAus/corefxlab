@@ -12,6 +12,7 @@ namespace NativeIOCP
         private SocketAddress _address;
         private Socket _socket;
         private IoHandle _io;
+        private WorkHandle _accept;
         private AcceptEx _acceptFn;
 
         private Listener() { }
@@ -51,6 +52,7 @@ namespace NativeIOCP
             listener._acceptFn = acceptFn;
             listener._socket = listenSocket;
             listener._io = IoHandle.Create(CallbackEnvironment.Default(), IntPtr.Zero, listenSocket, listener.OnAccept);
+            listener._accept = WorkHandle.Create(CallbackEnvironment.Default(), IntPtr.Zero, listener.AcceptNextConnection);
 
             return listener;
         }
@@ -65,7 +67,7 @@ namespace NativeIOCP
             
             WinsockImports.listen(_socket, 0);
 
-            AcceptNextConnection();
+            _accept.Submit();
         }
 
         public void Wait()
@@ -81,17 +83,20 @@ namespace NativeIOCP
                 throw new Exception($"accept failed: {ioResult}");
             }
 
-            var connection = overlapped.AcceptedConnection();
+            _accept.Submit();
 
-            connection.OnAccept(overlapped);
-            
-            AcceptNextConnection();
+            overlapped.AcceptedConnection().OnAccept(overlapped, bytesTransfered);
         }
-
-        private void AcceptNextConnection()
+        
+        private void AcceptNextConnection(CallbackInstance callbackInstance, IntPtr context, WorkHandle work)
         {
+            var bufferSize = 1024;
+            var addressSize = SocketAddressSize + 16;
+            var readWriteSize = bufferSize - (addressSize * 2);
+            var readSize = readWriteSize / 2;
+
             var acceptSocket = SocketFactory.Alloc();
-            var acceptBuffer = Buf.Alloc(1024);
+            var acceptBuffer = Buf.Alloc(bufferSize);
             var overlapped = OverlappedFactory.Alloc(acceptSocket, acceptBuffer);
 
             _io.Start();
@@ -100,9 +105,9 @@ namespace NativeIOCP
             var acceptResult = _acceptFn(
                 _socket,
                 acceptSocket,
-                acceptBuffer.Pointer, 0,
-                (uint)SocketAddressSize + 16,
-                (uint)SocketAddressSize + 16,
+                acceptBuffer.Pointer, (uint)readSize,
+                (uint)addressSize,
+                (uint)addressSize,
                 out received,
                 overlapped
             );
