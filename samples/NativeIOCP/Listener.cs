@@ -8,7 +8,7 @@ namespace NativeIOCP
 {
     public class Listener
     {
-        static int SocketAddressSize = Marshal.SizeOf<SocketAddress>();
+        static int _socketAddressSize = Marshal.SizeOf<SocketAddress>();
         
         private SocketAddress _address;
         private Socket _socket;
@@ -23,7 +23,7 @@ namespace NativeIOCP
 
         public static Listener OnAddress(System.Net.IPEndPoint listenOn)
         {
-            Startup();
+            WinsockImports.Startup();
 
             SocketAddress address = SocketAddress.FromIPEndPoint(listenOn);
             Socket listenSocket = SocketFactory.Alloc();
@@ -41,7 +41,7 @@ namespace NativeIOCP
         
         public void Listen()
         {
-            var bindResult = WinsockImports.bind(_socket, ref _address, SocketAddressSize);
+            var bindResult = WinsockImports.bind(_socket, ref _address, _socketAddressSize);
             if (bindResult != WinsockImports.Success)
             {
                 throw new Exception("bind failed");
@@ -66,54 +66,54 @@ namespace NativeIOCP
         {
             _accept.Wait(true);
             _io.Wait(true);
+
+            Close();
         }
         
-        private void OnAccept(
-            CallbackInstance callbackInstance, 
-            IntPtr context, 
-            ConnectionOverlapped overlapped, 
-            uint ioResult, 
-            uint bytesTransfered, 
-            IoHandle io)
+        private void OnAccept(CallbackInstance instance, IntPtr context, ConnectionOverlapped overlapped, uint result, uint transfered, IoHandle io)
         {
-            if (ioResult != WinsockImports.Success)
+            if (result != WinsockImports.Success)
             {
                 Close();
-                throw new Exception($"accept failed: {ioResult}");
+                throw new Exception($"accept failed: {result}");
             }
 
             _accept.Submit();
             
-            overlapped.Connection().OnAccept(overlapped, bytesTransfered);
+            overlapped.Connection.OnAccept(overlapped, transfered);
         }
         
         private void AcceptNextConnection(CallbackInstance callbackInstance, IntPtr context, WorkHandle work)
         {
             // TODO: Use a proper buffer
             var bufferSize = 4096;
-            var addressSize = SocketAddressSize + 16;
-            var readSize = bufferSize - (addressSize * 2);
-
-            var acceptSocket = SocketFactory.Alloc();
             var requestBuffer = Buf.Alloc(bufferSize);
-            
             var body = "Hello, world!";
             var responseBuffer = Buf.Alloc(Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\n\r\n{body}"));
 
+            var acceptSocket = SocketFactory.Alloc();
             var connection = ConnectionOverlappedHandle.CreateConnection(acceptSocket, requestBuffer, responseBuffer);
             
-            _io.Start();
-            var acceptResult = _acceptFn(
-                _socket,
-                acceptSocket,
-                requestBuffer.Pointer, (uint)readSize,
-                (uint)addressSize,
-                (uint)addressSize,
-                out uint received,
-                connection.Overlapped()
-            );
+            Accept(acceptSocket, requestBuffer, connection);
+        }
 
-            if (!acceptResult)
+        private void Accept(Socket acceptSocket, Buf requestBuffer, ConnectionOverlappedHandle connectionHandle)
+        {
+            var addressSize = _socketAddressSize + 16;
+            var readSize = requestBuffer.Length - (addressSize * 2);
+
+            _io.Start();
+            var success = _acceptFn(
+                _socket, 
+                acceptSocket, 
+                requestBuffer.Pointer, 
+                (uint)readSize, 
+                (uint)addressSize, 
+                (uint)addressSize, 
+                out uint received, 
+                connectionHandle.Overlapped);
+
+            if (!success)
             {
                 var error = WinsockImports.WSAGetLastError();
 
@@ -134,17 +134,6 @@ namespace NativeIOCP
             if (closeResult != WinsockImports.Success)
             {
                 throw new Exception($"Close failed: {closeResult}");
-            }
-        }
-
-        private static void Startup()
-        {
-            var version = new Winsock.Version(2, 2);
-            var startupResult = WinsockImports.WSAStartup((short)version.Raw, out WindowsSocketsData wsaData);
-
-            if (startupResult != System.Net.Sockets.SocketError.Success)
-            {
-                throw new Exception("Startup failed");
             }
         }
     }

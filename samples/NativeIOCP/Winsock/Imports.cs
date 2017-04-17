@@ -124,6 +124,17 @@ namespace NativeIOCP.Winsock
             return acceptEx;
         }
 
+        public static void Startup()
+        {
+            var version = new Version(2, 2);
+            var startupResult = WSAStartup((short)version.Raw, out WindowsSocketsData wsaData);
+
+            if (startupResult != System.Net.Sockets.SocketError.Success)
+            {
+                throw new Exception("Startup failed");
+            }
+        }
+
         public static GCHandle ReadFlags = GCHandle.Alloc(0, GCHandleType.Pinned);
 
         [DllImport(Ws232, SetLastError = true)]

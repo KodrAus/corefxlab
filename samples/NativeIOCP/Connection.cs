@@ -31,7 +31,7 @@ namespace NativeIOCP
             _io = IoHandle.Create(CallbackEnvironment.Default(), IntPtr.Zero, _socket, OnComplete);
         }
 
-        public void OnFree(Action freeFn)
+        public void SetFreeCallback(Action freeFn)
         {
             _freeFn = freeFn;
         }
