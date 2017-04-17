@@ -5,10 +5,20 @@ using System.Runtime.InteropServices;
 namespace NativeIOCP.ThreadPool
 {
     [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true)]
-    unsafe delegate void IoCallback(
+    unsafe delegate void ConnectionIoCallback(
         [In, Out] CallbackInstance callbackInstance,
         [In, Out, Optional] IntPtr context,
         [In, Out, Optional] ConnectionOverlapped overlapped,
+        [In] uint ioResult,
+        [In] uint bytesTransfered,
+        [In, Out] IoHandle io
+    );
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true)]
+    unsafe delegate void IoCallback(
+        [In, Out] CallbackInstance callbackInstance,
+        [In, Out, Optional] IntPtr context,
+        [In, Out, Optional] Overlapped overlapped,
         [In] uint ioResult,
         [In] uint bytesTransfered,
         [In, Out] IoHandle io
@@ -51,7 +61,12 @@ namespace NativeIOCP.ThreadPool
         {
             return ThreadPoolImports.CreateThreadpoolIo(socket, callback, context, environment);
         }
-        
+
+        public static IoHandle Create(CallbackEnvironment environment, IntPtr context, Socket socket, ConnectionIoCallback callback)
+        {
+            return ThreadPoolImports.CreateThreadpoolIo(socket, callback, context, environment);
+        }
+
         public void Start()
         {
             ThreadPoolImports.StartThreadpoolIo(this);
@@ -92,7 +107,15 @@ namespace NativeIOCP.ThreadPool
         [DllImport(K32, SetLastError = true)]
         public static extern IoHandle CreateThreadpoolIo(
             [In] Socket handle, 
-            [In] IoCallback callback, 
+            [In] ConnectionIoCallback callback, 
+            [In, Out, Optional] IntPtr context,
+            [In] CallbackEnvironment environment
+        );
+
+        [DllImport(K32, SetLastError = true)]
+        public static extern IoHandle CreateThreadpoolIo(
+            [In] Socket handle,
+            [In] IoCallback callback,
             [In, Out, Optional] IntPtr context,
             [In] CallbackEnvironment environment
         );

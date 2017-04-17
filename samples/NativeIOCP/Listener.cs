@@ -80,7 +80,7 @@ namespace NativeIOCP
 
             _accept.Submit();
             
-            overlapped.Connection.OnAccept(overlapped, transfered);
+            overlapped.OnAccept(transfered);
         }
         
         private void AcceptNextConnection(CallbackInstance callbackInstance, IntPtr context, WorkHandle work)

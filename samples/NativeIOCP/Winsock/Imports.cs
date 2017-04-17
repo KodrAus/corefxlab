@@ -71,7 +71,7 @@ namespace NativeIOCP.Winsock
     unsafe delegate bool OverlappedCompletionRoutine(
         [In] uint error,
         [In] uint transfered,
-        [In] ConnectionOverlapped overlapped,
+        [In] Overlapped overlapped,
         [In] IntPtr flags
     );
 
@@ -157,10 +157,10 @@ namespace NativeIOCP.Winsock
         public static extern Socket WSASocket([In] AddressFamilies af, [In] SocketType type, [In] Protocol protocol, [In] IntPtr lpProtocolInfo, [In] Int32 group, [In] SocketFlags dwFlags);
 
         [DllImport(Ws232, SetLastError = true)]
-        public static extern int WSARecv([In] Socket socket, [In, Out] WSABufs buffers, [In] uint bufferCount, [Out] out uint numberOfBytesRecvd, [In, Out] IntPtr flags, [In] ConnectionOverlapped overlapped, [In] OverlappedCompletionRoutine completionRoutine);
+        public static extern int WSARecv([In] Socket socket, [In, Out] WSABufs buffers, [In] uint bufferCount, [Out] out uint numberOfBytesRecvd, [In, Out] IntPtr flags, [In] Overlapped overlapped, [In] OverlappedCompletionRoutine completionRoutine);
 
         [DllImport(Ws232, SetLastError = true)]
-        public static extern int WSASend([In] Socket socket, [In] WSABufs buffers, [In] uint bufferCount, [Out] out uint numberOfBytesSent, [In] uint flags, [In] ConnectionOverlapped overlapped, [In] OverlappedCompletionRoutine completionRoutine);
+        public static extern int WSASend([In] Socket socket, [In] WSABufs buffers, [In] uint bufferCount, [Out] out uint numberOfBytesSent, [In] uint flags, [In] Overlapped overlapped, [In] OverlappedCompletionRoutine completionRoutine);
 
         [DllImport(Ws232, SetLastError = true)]
         public static extern ushort htons([In] ushort hostshort);

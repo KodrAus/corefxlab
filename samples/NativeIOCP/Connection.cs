@@ -37,7 +37,7 @@ namespace NativeIOCP
             _freeFn = freeFn;
         }
 
-        public void OnAccept(ConnectionOverlapped overlapped, uint bytesTransfered)
+        public void OnAccept(Overlapped overlapped, uint bytesTransfered)
         {
             if (bytesTransfered > 0)
             {
@@ -66,7 +66,7 @@ namespace NativeIOCP
             }
         }
 
-        private void OnComplete(CallbackInstance instance, IntPtr context, ConnectionOverlapped overlapped, uint ioResult, uint transfered, IoHandle io)
+        private void OnComplete(CallbackInstance instance, IntPtr context, Overlapped overlapped, uint ioResult, uint transfered, IoHandle io)
         {
             switch (_ioState)
             {
@@ -79,7 +79,7 @@ namespace NativeIOCP
             }
         }
 
-        private void OnReadComplete(ConnectionOverlapped overlapped, uint bytesTransfered)
+        private void OnReadComplete(Overlapped overlapped, uint bytesTransfered)
         {
             if (bytesTransfered == 0)
             {
@@ -91,12 +91,12 @@ namespace NativeIOCP
             }
         }
 
-        private void OnWriteComplete(ConnectionOverlapped overlapped, uint bytesTransfered)
+        private void OnWriteComplete(Overlapped overlapped, uint bytesTransfered)
         {
             DoRead(overlapped);
         }
 
-        private void DoRead(ConnectionOverlapped overlapped)
+        private void DoRead(Overlapped overlapped)
         {
             _ioState = State.Reading;
 
@@ -116,7 +116,7 @@ namespace NativeIOCP
             }
         }
 
-        private void DoWrite(ConnectionOverlapped overlapped)
+        private void DoWrite(Overlapped overlapped)
         {
             _ioState = State.Writing;
             

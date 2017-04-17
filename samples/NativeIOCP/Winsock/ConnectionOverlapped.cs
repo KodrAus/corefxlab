@@ -7,19 +7,24 @@ namespace NativeIOCP.Winsock
     struct NativeConnectionOverlapped
     {
         private System.Threading.NativeOverlapped _overlapped;
-        private GCHandle _connectionHandle;
+        private IntPtr _connectionHandlePointer;
 
-        public Connection Connection => (Connection)_connectionHandle.Target;
-
-        public static NativeConnectionOverlapped ForConnection(Connection connection)
-        {
-            var connectionHandle = GCHandle.Alloc(connection);
-            return new NativeConnectionOverlapped { _connectionHandle = connectionHandle };
-        }
+        public Connection Connection => (Connection)GCHandle.FromIntPtr(_connectionHandlePointer).Target;
         
-        public void Free()
+        public static NativeConnectionOverlapped ForConnection(IntPtr connectionHandlePointer)
+        {   
+            return new NativeConnectionOverlapped { _connectionHandlePointer = connectionHandlePointer };
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct Overlapped
+    {
+        private IntPtr _value;
+
+        public static Overlapped FromPointer(IntPtr overlapped)
         {
-            _connectionHandle.Free();
+            return new Overlapped { _value = overlapped };
         }
     }
 
@@ -29,20 +34,28 @@ namespace NativeIOCP.Winsock
         private IntPtr _value;
 
         public Connection Connection => Marshal.PtrToStructure<NativeConnectionOverlapped>(_value).Connection;
+        public Overlapped Overlapped => Overlapped.FromPointer(_value);
 
         public static ConnectionOverlapped ForNewConnection(Socket acceptSocket, Buf requestBuffer, Buf responseBuffer)
         {
             var connection = new Connection(acceptSocket, requestBuffer, responseBuffer);
-            
-            var overlappedHandle = GCHandle.Alloc(NativeConnectionOverlapped.ForConnection(connection), GCHandleType.Pinned);
+            var connectionHandle = GCHandle.Alloc(connection);
+
+            var overlapped = NativeConnectionOverlapped.ForConnection(GCHandle.ToIntPtr(connectionHandle));
+            var overlappedHandle = GCHandle.Alloc(overlapped, GCHandleType.Pinned);
 
             connection.SetFreeCallback(() =>
             {
-                ((NativeConnectionOverlapped)overlappedHandle.Target).Free();
+                connectionHandle.Free();
                 overlappedHandle.Free();
             });
 
             return new ConnectionOverlapped { _value = overlappedHandle.AddrOfPinnedObject() };
+        }
+
+        public void OnAccept(uint transfered)
+        {
+            Connection.OnAccept(Overlapped, transfered);
         }
     }
 }
