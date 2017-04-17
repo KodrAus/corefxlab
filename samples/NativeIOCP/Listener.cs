@@ -92,12 +92,12 @@ namespace NativeIOCP
             var responseBuffer = Buf.Alloc(Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\n\r\n{body}"));
 
             var acceptSocket = SocketFactory.Alloc();
-            var connection = ConnectionOverlappedHandle.CreateConnection(acceptSocket, requestBuffer, responseBuffer);
+            var connection = ConnectionOverlapped.ForNewConnection(acceptSocket, requestBuffer, responseBuffer);
             
             Accept(acceptSocket, requestBuffer, connection);
         }
 
-        private void Accept(Socket acceptSocket, Buf requestBuffer, ConnectionOverlappedHandle connectionHandle)
+        private void Accept(Socket acceptSocket, Buf requestBuffer, ConnectionOverlapped connectionHandle)
         {
             var addressSize = _socketAddressSize + 16;
             var readSize = requestBuffer.Length - (addressSize * 2);
@@ -111,7 +111,7 @@ namespace NativeIOCP
                 (uint)addressSize, 
                 (uint)addressSize, 
                 out uint received, 
-                connectionHandle.Overlapped);
+                connectionHandle);
 
             if (!success)
             {

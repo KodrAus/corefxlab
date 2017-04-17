@@ -21,13 +21,16 @@ namespace NativeIOCP
         
         static void Main(string[] args)
         {
-            var listener = Listener.OnAddress(new IPEndPoint(IPAddress.Loopback, 5000));
+            var endpoint = new IPEndPoint(IPAddress.Loopback, 5000);
+            var listener = Listener.OnAddress(endpoint);
 
             listener.Listen();
 
-            Console.WriteLine("Listening");
+            Console.WriteLine($"Listening on {endpoint}");
 
             Console.ReadLine();
+
+            listener.Stop();
 
             WinsockImports.WSACleanup();
         }

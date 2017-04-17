@@ -11,8 +11,9 @@ namespace NativeIOCP.Winsock
 
         public Connection Connection => (Connection)_connectionHandle.Target;
 
-        public static NativeConnectionOverlapped ForConnection(GCHandle connectionHandle)
+        public static NativeConnectionOverlapped ForConnection(Connection connection)
         {
+            var connectionHandle = GCHandle.Alloc(connection);
             return new NativeConnectionOverlapped { _connectionHandle = connectionHandle };
         }
         
@@ -29,35 +30,19 @@ namespace NativeIOCP.Winsock
 
         public Connection Connection => Marshal.PtrToStructure<NativeConnectionOverlapped>(_value).Connection;
 
-        public static ConnectionOverlapped FromNativeOverlapped(GCHandle nativeOverlapped)
-        {
-            return new ConnectionOverlapped { _value = nativeOverlapped.AddrOfPinnedObject() };
-        }
-    }
-
-    struct ConnectionOverlappedHandle
-    {
-        private GCHandle _handle;
-
-        public ConnectionOverlapped Overlapped => ConnectionOverlapped.FromNativeOverlapped(_handle);
-
-        public static ConnectionOverlappedHandle CreateConnection(Socket acceptSocket, Buf requestBuffer, Buf responseBuffer)
+        public static ConnectionOverlapped ForNewConnection(Socket acceptSocket, Buf requestBuffer, Buf responseBuffer)
         {
             var connection = new Connection(acceptSocket, requestBuffer, responseBuffer);
+            
+            var overlappedHandle = GCHandle.Alloc(NativeConnectionOverlapped.ForConnection(connection), GCHandleType.Pinned);
 
-            var connectionHandle = GCHandle.Alloc(connection);
-            var overlappedHandle = GCHandle.Alloc(NativeConnectionOverlapped.ForConnection(connectionHandle), GCHandleType.Pinned);
-            var overlapped = new ConnectionOverlappedHandle { _handle = overlappedHandle };
+            connection.SetFreeCallback(() =>
+            {
+                ((NativeConnectionOverlapped)overlappedHandle.Target).Free();
+                overlappedHandle.Free();
+            });
 
-            connection.SetFreeCallback(() => overlapped.Free());
-
-            return overlapped;
-        }
-
-        public void Free()
-        {
-            ((NativeConnectionOverlapped)_handle.Target).Free();
-            _handle.Free();
+            return new ConnectionOverlapped { _value = overlappedHandle.AddrOfPinnedObject() };
         }
     }
 }

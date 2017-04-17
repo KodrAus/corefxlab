@@ -16,6 +16,7 @@ namespace NativeIOCP
         private State _ioState;
         private Socket _socket;
         private IoHandle _io;
+        private bool _closed;
 
         private Buf _requestBuffer;
         private Buf _responseBuffer;
@@ -48,21 +49,32 @@ namespace NativeIOCP
             }
         }
 
-        private void OnComplete(
-            CallbackInstance callbackInstance,
-            IntPtr context,
-            ConnectionOverlapped overlapped,
-            uint ioResult,
-            uint bytesTransfered,
-            IoHandle io)
+        public void Close()
+        {
+            if (!_closed)
+            {
+                _closed = true;
+
+                var closeResult = WinsockImports.closesocket(_socket);
+
+                Free();
+
+                if (closeResult != WinsockImports.Success)
+                {
+                    throw new Exception($"Close failed: {closeResult}");
+                }
+            }
+        }
+
+        private void OnComplete(CallbackInstance instance, IntPtr context, ConnectionOverlapped overlapped, uint ioResult, uint transfered, IoHandle io)
         {
             switch (_ioState)
             {
                 case State.Reading:
-                    OnReadComplete(overlapped, bytesTransfered);
+                    OnReadComplete(overlapped, transfered);
                     break;
                 case State.Writing:
-                    OnWriteComplete(overlapped, bytesTransfered);
+                    OnWriteComplete(overlapped, transfered);
                     break;
             }
         }
@@ -123,19 +135,7 @@ namespace NativeIOCP
                 }
             }
         }
-
-        private void Close()
-        {
-            var closeResult = WinsockImports.closesocket(_socket);
-
-            Free();
-
-            if (closeResult != WinsockImports.Success)
-            {
-                throw new Exception($"Close failed: {closeResult}");
-            }
-        }
-
+        
         private void Free()
         {
             _io.Cancel();
